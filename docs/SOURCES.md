@@ -108,3 +108,25 @@ ISA_STATUS.md (XUL, BALR link ordering, carry/overflow modeling).
   *available* (IBM 6246156B, 75-A97-001 scans) but has not yet been read;
   Lazarus AP therefore currently targets the **AP-101S** and makes no
   claims about AP-101B-specific behavior.
+
+## Differential verification (2026-08-02)
+
+Output parity proves the answers match. `tools/difftest.py` proves the
+machines agree *step by step*: it runs yaGPC2 with `--trace` and Lazarus
+AP with `lazap-trace` on the same image and compares every executed
+instruction - address, opcode, and every register the reference reports
+changing.
+
+    hello.fcm             IDENTICAL   6000 instructions
+    176-P.fcm             IDENTICAL    534 instructions
+    LAZARUS.fcm           IDENTICAL    401 instructions
+    read_eof_onerror.fcm  IDENTICAL     28 instructions
+
+That sweeps the instruction set as actually exercised by real
+flight-compiler output, rather than trusting that a handful of programs
+happen to cover it. Two harness bugs were found and fixed while
+building it (both ours, not the emulator's): our trace samples
+registers before each instruction while the reference reports what an
+instruction produced, so comparison is offset by one step; and the
+reference's section names can run straight into the offset field
+("#CREADAC+0000:"), which a whitespace-hungry parser silently drops.
