@@ -89,7 +89,26 @@ spec. Remaining:
 - A terminal (later graphical) front end: type on the keyboard, watch
   the (test-software) displays, flip a GPC's mode switch.
 
-## Phase 6 — flight software (legal-path dependent) — NEXT
+## Phase 7 — compile our own HAL/S (scouted, next)
+
+The recovered Shuttle-era HAL/S-FC compiler source (release 32V0, XPL +
+BAL, Ron Burkey's ASCII restoration) lives in the Virtual AGC tree at
+`yaShuttle/Source Code/PASS.REL32V0`, with a working Makefile: XCOM-I
+translates the XPL to C, gcc compiles the seven passes, and the HALSFC
+driver script runs them (plus a Python PASS1 port as a cross-check).
+Recipe to fetch:
+    git clone --depth 1 --filter=blob:none --sparse \
+        https://github.com/virtualagc/virtualagc
+    git sparse-checkout set "yaShuttle/Source Code/PASS.REL32V0" \
+        yaShuttle/yaGPC2 yaShuttle/yaGpcIntegration
+XCOM-I is elsewhere in the same tree (see the Makefile's references and
+ibiblio.org/apollo/XPL.html). The `lnk101` linker's source location is
+still to be found (tools.md documents its CLI: `lnk101 OBJ -o FCM
+--json-symbols SYM`; check the yaHALMAT2 tree and sandroid.org). When
+both build, the loop closes: write new HAL/S, compile with the real
+flight compiler, run on Lazarus AP at byte parity.
+
+## Phase 6 — flight software (legal-path dependent) — RUNTIME DONE
 
 FCM loading works (src/fcm.rs): the Virtual AGC Shuttle toolchain is
 HALSFC (HAL/S compiler) -> lnk101 (linker) -> .fcm memory image + a
