@@ -103,3 +103,55 @@ RESULT: DC   H(0)
         assert_eq!(cpu.mem.read_h(result_addr).unwrap(), 42);
     }
 }
+
+/// Minimal view over an lnk101 symbols JSON: entry point plus name ->
+/// address lookups, scoped to the `sections` and `symbols` arrays (the
+/// file's key order — sections, then symbols, then modules — is relied
+/// on to avoid dragging in a JSON parser for two lookups).
+pub struct Symbols<'a> {
+    sections: &'a str,
+    symbols: &'a str,
+    pub entry: Option<u32>,
+}
+
+fn find_addr(region: &str, name: &str) -> Option<u32> {
+    let mut from = 0;
+    loop {
+        let i = region[from..].find("\"name\"")? + from;
+        let rest = region[i + 6..].trim_start().strip_prefix(':')?.trim_start();
+        let found = rest
+            .strip_prefix('"')
+            .map(|r| r.starts_with(name) && r[name.len()..].starts_with('"'))
+            .unwrap_or(false);
+        if found {
+            let j = region[i..].find("\"address\"")? + i;
+            let rest = region[j + 9..].trim_start().strip_prefix(':')?.trim_start();
+            let end = rest
+                .find(|c: char| !c.is_ascii_digit())
+                .unwrap_or(rest.len());
+            return rest[..end].parse().ok();
+        }
+        from = i + 6;
+    }
+}
+
+impl<'a> Symbols<'a> {
+    pub fn parse(json: &'a str) -> Symbols<'a> {
+        let sec = json.find("\"sections\"").unwrap_or(0);
+        let sym = json.find("\"symbols\"").unwrap_or(json.len());
+        let modules = json.find("\"modules\"").unwrap_or(json.len());
+        Symbols {
+            sections: &json[sec..sym.max(sec)],
+            symbols: &json[sym.min(modules)..modules],
+            entry: entry_point(json),
+        }
+    }
+
+    pub fn section(&self, name: &str) -> Option<u32> {
+        find_addr(self.sections, name)
+    }
+
+    pub fn symbol(&self, name: &str) -> Option<u32> {
+        find_addr(self.symbols, name)
+    }
+}

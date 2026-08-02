@@ -12,10 +12,12 @@ fn real_halsfc_hello_world_runs() {
     let json = std::fs::read_to_string("roms/hello/hello-lnk101.json").unwrap();
     let mut cpu = Cpu::new(Memory::full());
     fcm::boot(&mut cpu, &bytes, Some(&json)).unwrap();
-    // Trap addresses resolved from the symbols JSON the way yaGPC2 does:
-    // IOINIT section base 65806 (OUTRAP +0x11, CNTRAP +0x40), INTRAP
-    // 65858, IOCODE 398, IOBUF 400.
-    let mut ucp = HalUcp::new(65806, 65858, 398, 400);
+    // Trap addresses auto-resolved from the symbols JSON the way yaGPC2
+    // does (IOINIT section base -> OUTRAP/CNTRAP; INTRAP/IOCODE/IOBUF
+    // symbols).
+    let mut ucp = HalUcp::from_symbols_json(&json).expect("symbols resolve");
+    assert_eq!(ucp.outrap, 65806 + 0x11);
+    assert_eq!(ucp.iocode_addr, 398);
     let r = run_hal(&mut cpu, &mut ucp, 2_000_000);
     println!("--- captured output ---\n{}\n---", ucp.output);
     println!("result: {r:?}, ic={:04X} bsr={}", cpu.psw.ic, cpu.psw.bsr);

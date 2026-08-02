@@ -37,9 +37,23 @@ pub struct HalUcp {
 }
 
 impl HalUcp {
+    /// Resolve everything from an lnk101 symbols JSON, the way yaGPC2's
+    /// halucp_init_from_symbols does: the IOINIT *section* base gives
+    /// OUTRAP (+0x11) and CNTRAP (+0x40); the INTRAP/IOCODE/IOBUF
+    /// *symbols* give the rest. None if any required name is missing.
+    pub fn from_symbols_json(json: &str) -> Option<HalUcp> {
+        let sym = crate::fcm::Symbols::parse(json);
+        Some(HalUcp::new(
+            sym.section("IOINIT")?,
+            sym.symbol("INTRAP")?,
+            sym.symbol("IOCODE")?,
+            sym.symbol("IOBUF")?,
+        ))
+    }
+
     /// Trap addresses per yaGPC2: OUTRAP/CNTRAP at fixed offsets from
     /// the IOINIT section base; INTRAP/IOCODE/IOBUF from the symbol
-    /// table. (Symbol-JSON wiring is the caller's job for now.)
+    /// table.
     pub fn new(ioinit_base: u32, intrap: u32, iocode: u32, iobuf: u32) -> HalUcp {
         HalUcp {
             outrap: ioinit_base + 0x11,
@@ -73,6 +87,17 @@ impl HalUcp {
             10 => {
                 let v = cpu.mem.read_h(self.iobuf_addr).unwrap_or(0) as i16;
                 format!("{v}")
+            }
+            11 => {
+                // EOUT: single-precision IBM hex float (§8 format).
+                let w = cpu.mem.read_f(self.iobuf_addr).unwrap_or(0);
+                format_scalar(ibm_to_f64(crate::float::unpack_short(w)), 7)
+            }
+            12 => {
+                // DOUT: double-precision (register-pair layout).
+                let hi = cpu.mem.read_f(self.iobuf_addr).unwrap_or(0);
+                let lo = cpu.mem.read_f(self.iobuf_addr + 2).unwrap_or(0);
+                format_scalar(ibm_to_f64(crate::float::unpack_long(hi, lo)), 16)
             }
             13 => {
                 // Descriptor halfword: current length in the low byte
@@ -116,6 +141,47 @@ impl HalUcp {
             _ => {}
         }
     }
+}
+
+fn ibm_to_f64(u: crate::float::Unpacked) -> f64 {
+    if u.is_zero() {
+        return 0.0;
+    }
+    // value = frac * 16^-14 * 16^(ch-64), frac being the 56-bit fraction
+    let m = u.frac as f64 * (16f64).powi(u.ch - 78);
+    if u.neg {
+        -m
+    } else {
+        m
+    }
+}
+
+/// HAL/S scalar output format (yaGPC2 format_scalar): sign column,
+/// one integer digit, `frac_digits` decimals, two-digit signed
+/// exponent. Zero prints as " 0.0".
+fn format_scalar(v: f64, frac_digits: usize) -> String {
+    if v == 0.0 {
+        return " 0.0".to_string();
+    }
+    let sign = if v < 0.0 { '-' } else { ' ' };
+    let av = v.abs();
+    let mut exp = av.log10().floor() as i32;
+    let mut mant = av / 10f64.powi(exp);
+    if mant >= 10.0 {
+        mant /= 10.0;
+        exp += 1;
+    } else if mant < 1.0 {
+        mant *= 10.0;
+        exp -= 1;
+    }
+    let mut ms = format!("{mant:.frac_digits$}");
+    if ms.find('.') != Some(1) {
+        mant /= 10.0;
+        exp += 1;
+        ms = format!("{mant:.frac_digits$}");
+    }
+    let es = if exp >= 0 { '+' } else { '-' };
+    format!("{sign}{ms}E{es}{:02}", exp.abs())
 }
 
 /// Outcome of running a HAL/S-style program to completion.
