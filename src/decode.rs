@@ -71,7 +71,8 @@ pub enum Instr {
     Der, De, Dedr, Ded, Ler, Le, Led, Lecr,
     Ste, Sted, Cvfx, Cvfl, Mvs, Lfli, Lflr, Lfxr,
     // Status switching / special (§2.5, §9)
-    Lps, Spm, Ssm, Svc, Ts,
+    Lps, Spm, Ssm, Svc, Ts, Tsb, Mvh, Ispb,
+    Scal, Sret, Lxar, Lxa, Stxar, Stxa, Ldm, Stdm,
     /// Known encoding, execution not implemented yet.
     NotImplemented(&'static str),
 }
@@ -137,7 +138,8 @@ impl Instr {
         match self {
             A | Ast | C | D | L | M | St | S | Sst
             | N | Nst | X | Xst | O | Ost | Lm | Stm
-            | Ae | Se | Ce | Me | De | Le | Ste | Mvs | Lps => Width::Full,
+            | Ae | Se | Ce | Me | De | Le | Ste | Mvs | Lps
+            | Lxa | Stxa | Ldm | Stdm => Width::Full,
             Aed | Sed | Ced | Med | Ded | Led | Sted => Width::Double,
             _ => Width::Half,
         }
@@ -146,7 +148,7 @@ impl Instr {
     /// LM, STM (and LPS/ISPB, unimplemented) always use halfword index
     /// alignment (§14.1).
     pub fn halfword_index_alignment(self) -> bool {
-        matches!(self, Instr::Lm | Instr::Stm | Instr::Lps)
+        matches!(self, Instr::Lm | Instr::Stm | Instr::Lps | Instr::Ispb)
     }
 
     pub fn mnemonic(self) -> &'static str {
@@ -179,7 +181,9 @@ impl Instr {
             Ste => "STE", Sted => "STED", Cvfx => "CVFX", Cvfl => "CVFL",
             Mvs => "MVS", Lfli => "LFLI", Lflr => "LFLR", Lfxr => "LFXR",
             Lps => "LPS", Spm => "SPM", Ssm => "SSM", Svc => "SVC",
-            Ts => "TS",
+            Ts => "TS", Tsb => "TSB", Mvh => "MVH", Ispb => "ISPB",
+            Scal => "SCAL", Sret => "SRET", Lxar => "LXAR", Lxa => "LXA",
+            Stxar => "STXAR", Stxa => "STXA", Ldm => "LDM", Stdm => "STDM",
             NotImplemented(m) => m,
         }
     }
@@ -260,15 +264,15 @@ fn rr2_slot(op5: u8, r1: u8) -> Option<Instr> {
         0b00101 => Some(Lflr),
         0b00110 => Some(Medr),
         0b00111 => Some(Cvfl),
-        0b01000 => Some(NotImplemented("LXAR")),
+        0b01000 => Some(Lxar),
         0b01001 => Some(Cer),
         0b01010 => Some(Aedr),
         0b01011 => Some(Sedr),
-        0b01101 => Some(NotImplemented("MVH")),
+        0b01101 => Some(Mvh),
         0b01111 => Some(Lecr),
-        0b10010 => Some(NotImplemented("SRET")),
+        0b10010 => Some(Sret),
         0b10011 => Some(Sum),
-        0b10100 => Some(NotImplemented("STXAR")),
+        0b10100 => Some(Stxar),
         0b11000 => Some(Bcre),
         0b11001 => match r1 {
             0b000 => Some(Spm),
@@ -305,13 +309,13 @@ fn rs2_slot(op5: u8, r1: u8) -> Option<Instr> {
         0b00101 => Some(Ost),
         0b00110 => Some(Med),
         0b00111 => Some(Sted),
-        0b01000 => Some(NotImplemented("LXA")),
+        0b01000 => Some(Lxa),
         0b01001 => Some(Ce),
         0b01010 => Some(Aed),
         0b01011 => Some(Sed),
         0b01100 => Some(Mvs),
         0b01101 => match r1 {
-            0b000 => Some(NotImplemented("LDM")),
+            0b000 => Some(Ldm),
             _ => None,
         },
         0b01110 => Some(Xst),
@@ -322,11 +326,11 @@ fn rs2_slot(op5: u8, r1: u8) -> Option<Instr> {
             _ => None,
         },
         0b10010 => match r1 {
-            0b000 => Some(NotImplemented("STDM")),
+            0b000 => Some(Stdm),
             _ => None,
         },
         0b10011 => Some(Mih),
-        0b10100 => Some(NotImplemented("STXA")),
+        0b10100 => Some(Stxa),
         0b10111 => match r1 {
             0b000 => Some(Ts),
             _ => None,
@@ -339,11 +343,11 @@ fn rs2_slot(op5: u8, r1: u8) -> Option<Instr> {
             0b101 => Some(Lps),
             _ => None,
         },
-        0b11010 => Some(NotImplemented("SCAL")),
+        0b11010 => Some(Scal),
         // IAL's RS forms live in the RS-alternate slot because BAL owns the
         // RS slot of op code 11100 (§13; yaGPC2 handles IAL identically).
         0b11100 => Some(Ial),
-        0b11101 => Some(NotImplemented("ISPB")),
+        0b11101 => Some(Ispb),
         _ => None,
     }
 }
@@ -371,7 +375,7 @@ fn explicit_imm(opx: u8) -> (Option<Instr>, Option<Instr>) {
         0b100 => (Some(Xhi), Some(Xist)),
         0b101 => (Some(Chi), Some(Cist)),
         0b110 => (Some(Nhi), Some(Nist)),
-        0b111 => (Some(Mhi), Some(NotImplemented("TSB"))),
+        0b111 => (Some(Mhi), Some(Tsb)),
         _ => (None, None),
     }
 }
@@ -664,14 +668,14 @@ mod tests {
 
     #[test]
     fn not_implemented_decodes() {
-        // Still-unimplemented specials decode (so traps can name them).
+        // Still-unimplemented (I/O-dependent) specials decode by name.
         assert_eq!(
-            d1(0b01101_001_11101_010).instr,
-            Instr::NotImplemented("MVH")
+            d1(0b11011_001_11100_010).instr,
+            Instr::NotImplemented("ICR")
         );
         assert_eq!(
-            decode(0b11010_001_11111_000, 0).unwrap().instr,
-            Instr::NotImplemented("SCAL")
+            decode(0b11000_001_11111_000, 0).unwrap().instr,
+            Instr::NotImplemented("DIAG")
         );
         // Floating point now decodes to real instructions.
         assert_eq!(d1(0b01010_001_11100_010).instr, Instr::Aer);

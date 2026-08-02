@@ -18,6 +18,9 @@ pub mod psa {
     /// Supervisor call.
     pub const SVC_OLD: u32 = 0x0058;
     pub const SVC_NEW: u32 = 0x005C;
+    /// Instruction monitor (CPU breakpoint), Figure 2-20.
+    pub const MONITOR_OLD: u32 = 0x0070;
+    pub const MONITOR_NEW: u32 = 0x0074;
 }
 
 /// Program-exception interrupt codes (§2.5.2 Figure 2-20).
@@ -30,6 +33,7 @@ pub mod pe_code {
     pub const CONVERT_OVERFLOW: u16 = 0x000A;
     pub const FP_OVERFLOW: u16 = 0x000B;
     pub const FP_DIVIDE: u16 = 0x000C;
+    pub const STORE_PROTECT: u16 = 0x0007;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -275,9 +279,30 @@ impl Cpu {
                         };
                         return Ok(Ea::Mem { ea16, addr });
                     }
-                    // Fullword indirect address pointer modes (I=1 with
-                    // IA=1, and X=0/IA=0 handled above): §2.2.8 steps 7/10,
-                    // Figure 2-17. Not implemented in phase 1.
+                    // Fullword indirect with automatic storage
+                    // modification (§2.2.8 step 6, Figure 2-15): the
+                    // pointer fullword holds address (bits 0-15) and
+                    // modifier (bits 16-31); after the EA is formed the
+                    // modifier is added to the address and written back.
+                    (0, true, true) => {
+                        let ptr_addr = self.expand_data(pea, base_reg);
+                        let ptr =
+                            self.mem.read_f(ptr_addr).map_err(|e| trap_addr(e, at))?;
+                        let ea16 = (ptr >> 16) as u16;
+                        let addr = if branch {
+                            self.expand_branch(ea16)
+                        } else {
+                            self.expand_data(ea16, None)
+                        };
+                        let modified = ea16.wrapping_add(ptr as u16) as u32;
+                        self.mem
+                            .write_f(ptr_addr, (modified << 16) | (ptr & 0xFFFF))
+                            .map_err(|e| trap_addr(e, at))?;
+                        return Ok(Ea::Mem { ea16, addr });
+                    }
+                    // Fullword indirect address pointer with postindexing
+                    // and BSV/DSV/PSW-modify control bits (X!=0, IA=1,
+                    // I=1): §2.2.8 step 10, Figure 2-17. Not implemented.
                     _ => return Err(Trap::UnimplementedAddressing { at }),
                 }
             }
@@ -438,12 +463,41 @@ impl Cpu {
         self.psw_swap(psa::PROGRAM_OLD, psa::PROGRAM_NEW, at)
     }
 
+    /// Store honoring storage protection (§2.4): a protected halfword
+    /// causes an (unmaskable) program interrupt, code 0007, and the store
+    /// does not occur. Returns false when the interrupt was taken — the
+    /// instruction terminates without its remaining effects.
+    fn store_h_prot(&mut self, addr: u32, v: u16, at: u32) -> Result<bool, Trap> {
+        if self.mem.is_protected(addr) {
+            self.program_interrupt(pe_code::STORE_PROTECT, at)?;
+            return Ok(false);
+        }
+        self.mem.write_h(addr, v).map_err(|e| trap_addr(e, at))?;
+        Ok(true)
+    }
+
+    fn store_f_prot(&mut self, addr: u32, v: u32, at: u32) -> Result<bool, Trap> {
+        if self.mem.is_protected(addr) || self.mem.is_protected(addr.wrapping_add(1)) {
+            self.program_interrupt(pe_code::STORE_PROTECT, at)?;
+            return Ok(false);
+        }
+        self.mem.write_f(addr, v).map_err(|e| trap_addr(e, at))?;
+        Ok(true)
+    }
+
     // ----- fetch/execute -----
 
     /// Execute one instruction. Returns the 19-bit address it was fetched
     /// from.
     pub fn step(&mut self) -> Result<u32, Trap> {
         let at = self.expand_branch(self.psw.ic);
+        // Instruction monitor (§2.4.1): with PSW bit 34 set, executing an
+        // unprotected instruction word interrupts; the AP-101S leaves the
+        // IC pointing at the offending instruction.
+        if self.psw.sys_mask & 0b0010_0000 != 0 && !self.mem.is_protected(at) {
+            self.psw_swap(psa::MONITOR_OLD, psa::MONITOR_NEW, at)?;
+            return Ok(at);
+        }
         let hw1 = self.read_h(at, at)?;
         // The second halfword is fetched only if the format needs it.
         let hw2 = self.mem.read_h(at.wrapping_add(1)).unwrap_or(0);
@@ -533,7 +587,9 @@ impl Cpu {
                 let addr = self.storage_addr(dec, at)?;
                 let op = self.mem.read_f(addr).map_err(|e| trap_addr(e, at))?;
                 let (r, _) = self.add_flags(self.r(r1), op);
-                self.mem.write_f(addr, r).map_err(|e| trap_addr(e, at))?;
+                if !self.store_f_prot(addr, r, at)? {
+                    return Ok(());
+                }
                 self.cc_value32(r);
             }
             S | Sr => {
@@ -554,7 +610,9 @@ impl Cpu {
                 let addr = self.storage_addr(dec, at)?;
                 let op = self.mem.read_f(addr).map_err(|e| trap_addr(e, at))?;
                 let (r, _) = self.sub_flags(op, self.r(r1));
-                self.mem.write_f(addr, r).map_err(|e| trap_addr(e, at))?;
+                if !self.store_f_prot(addr, r, at)? {
+                    return Ok(());
+                }
                 self.cc_value32(r);
             }
 
@@ -710,9 +768,9 @@ impl Cpu {
             Stm => {
                 let addr = self.storage_addr(dec, at)?;
                 for n in 0..8u8 {
-                    self.mem
-                        .write_f(addr.wrapping_add(2 * n as u32), self.r(n))
-                        .map_err(|e| trap_addr(e, at))?;
+                    if !self.store_f_prot(addr.wrapping_add(2 * n as u32), self.r(n), at)? {
+                        return Ok(());
+                    }
                 }
             }
             Msth => {
@@ -721,24 +779,27 @@ impl Cpu {
                 let addr = self.storage_addr(dec, at)?;
                 let v = self.read_h(addr, at)?;
                 let r = v.wrapping_add(dec.imm);
-                self.mem.write_h(addr, r).map_err(|e| trap_addr(e, at))?;
+                if !self.store_h_prot(addr, r, at)? {
+                    return Ok(());
+                }
                 self.cc_value16(r);
             }
             St => {
                 let addr = self.storage_addr(dec, at)?;
-                self.mem.write_f(addr, self.r(r1)).map_err(|e| trap_addr(e, at))?;
+                self.store_f_prot(addr, self.r(r1), at)?;
             }
             Sth => {
                 let addr = self.storage_addr(dec, at)?;
-                self.mem
-                    .write_h(addr, self.r_upper(r1))
-                    .map_err(|e| trap_addr(e, at))?;
+                let v = self.r_upper(r1);
+                self.store_h_prot(addr, v, at)?;
             }
             Td => {
                 let addr = self.storage_addr(dec, at)?;
                 let v = self.read_h(addr, at)?;
                 let r = v.wrapping_sub(1);
-                self.mem.write_h(addr, r).map_err(|e| trap_addr(e, at))?;
+                if !self.store_h_prot(addr, r, at)? {
+                    return Ok(());
+                }
                 self.cc_value16(r);
             }
 
@@ -903,7 +964,9 @@ impl Cpu {
                     Ost => a | op,
                     _ => a ^ op,
                 };
-                self.mem.write_f(addr, r).map_err(|e| trap_addr(e, at))?;
+                if !self.store_f_prot(addr, r, at)? {
+                    return Ok(());
+                }
                 self.cc_logical32(r);
             }
             Nist | Xist | Sb | Zb => {
@@ -916,7 +979,9 @@ impl Cpu {
                     Sb => v | dec.imm,
                     _ => v & !dec.imm,
                 };
-                self.mem.write_h(addr, r).map_err(|e| trap_addr(e, at))?;
+                if !self.store_h_prot(addr, r, at)? {
+                    return Ok(());
+                }
                 self.cc_logical16(r);
             }
             Zrb => {
@@ -929,12 +994,12 @@ impl Cpu {
             Zh => {
                 // Storage halfword set to all zeros; CC not changed (§7.20).
                 let addr = self.storage_addr(dec, at)?;
-                self.mem.write_h(addr, 0).map_err(|e| trap_addr(e, at))?;
+                self.store_h_prot(addr, 0, at)?;
             }
             Shw => {
                 // Storage halfword set to all ones; CC not changed (§7.14).
                 let addr = self.storage_addr(dec, at)?;
-                self.mem.write_h(addr, 0xFFFF).map_err(|e| trap_addr(e, at))?;
+                self.store_h_prot(addr, 0xFFFF, at)?;
             }
             Tb => {
                 let addr = self.storage_addr(dec, at)?;
@@ -1042,18 +1107,14 @@ impl Cpu {
             }
             Ste => {
                 let addr = self.storage_addr(dec, at)?;
-                self.mem
-                    .write_f(addr, self.fpr[(r1 & 7) as usize])
-                    .map_err(|e| trap_addr(e, at))?;
+                self.store_f_prot(addr, self.fpr[(r1 & 7) as usize], at)?;
             }
             Sted => {
                 let addr = self.storage_addr(dec, at)?;
-                self.mem
-                    .write_f(addr, self.fpr[(r1 & 7) as usize])
-                    .map_err(|e| trap_addr(e, at))?;
-                self.mem
-                    .write_f(addr + 2, self.fpr[((r1 + 1) % 8) as usize])
-                    .map_err(|e| trap_addr(e, at))?;
+                if !self.store_f_prot(addr, self.fpr[(r1 & 7) as usize], at)? {
+                    return Ok(());
+                }
+                self.store_f_prot(addr + 2, self.fpr[((r1 + 1) % 8) as usize], at)?;
             }
             Cvfx => {
                 // §8.13: unnormalize to characteristic 0x44 and convert to a
@@ -1197,7 +1258,180 @@ impl Cpu {
                 let addr = self.storage_addr(dec, at)?;
                 let v = self.read_h(addr, at)?;
                 self.cc_test(v as u32, 0xFFFF);
-                self.mem.write_h(addr, 0xFFFF).map_err(|e| trap_addr(e, at))?;
+                self.store_h_prot(addr, 0xFFFF, at)?;
+            }
+            Tsb => {
+                // §9.11: test bits (three-state CC), then OR the immediate
+                // into the halfword operand, atomically.
+                let addr = self.storage_addr(dec, at)?;
+                let v = self.read_h(addr, at)?;
+                self.cc_test(v as u32, dec.imm as u32);
+                self.store_h_prot(addr, v | dec.imm, at)?;
+            }
+            Ispb => {
+                // §9.2: privileged; M1 selects set/reset for the halfword
+                // or fullword at the EA; M1 with bit 5 set is illegal.
+                if self.privileged_violation(at)? {
+                    return Ok(());
+                }
+                if r1 & 0b100 != 0 {
+                    return self.program_interrupt(pe_code::ILLEGAL, at);
+                }
+                let addr = self.storage_addr(dec, at)?;
+                let on = r1 & 0b010 != 0;
+                if r1 & 0b001 != 0 {
+                    // both halfwords of the fullword; EA low bit ignored
+                    let base = addr & !1;
+                    self.mem.set_protected(base, on).map_err(|e| trap_addr(e, at))?;
+                    self.mem.set_protected(base | 1, on).map_err(|e| trap_addr(e, at))?;
+                } else {
+                    self.mem.set_protected(addr, on).map_err(|e| trap_addr(e, at))?;
+                }
+            }
+            Mvh => {
+                // §9.4: block move of `count` halfwords (R1 bits 16-31),
+                // from source sector/offset in R2 to destination
+                // sector/offset in R1, high address first: MS(D+C) <-
+                // MS(S+C). Executed atomically here (no async interrupts
+                // yet); a store-protect violation backs the IC up to the
+                // MVH itself with the remaining count in R1 (§9.4 notes).
+                let r2 = operand_reg(dec);
+                let r1v = self.r(r1);
+                let r2v = self.r(r2);
+                let count = r1v as u16 as i16;
+                if count > 0 {
+                    let dsect = if r1v & 0x8000_0000 != 0 {
+                        self.psw.dsr
+                    } else {
+                        self.dse[self.psw.reg_set as usize][(r1 & 7) as usize]
+                    } as u32;
+                    let ssect = if r2v & 0x8000_0000 != 0 {
+                        (r2v & 0xF) as u32
+                    } else {
+                        0
+                    };
+                    let d19 = (dsect << 15) | ((r2v_dest(r1v)) as u32);
+                    let s19 = (ssect << 15) | (((r2v >> 16) & 0x7FFF) as u32);
+                    for c in (1..=count as u32).rev() {
+                        let v = self.read_h(s19 + c, at)?;
+                        if self.mem.is_protected(d19 + c) {
+                            self.set_r_lower(r1, c as u16);
+                            self.psw.ic = self.psw.ic.wrapping_sub(dec.len as u16);
+                            return self.program_interrupt(pe_code::STORE_PROTECT, at);
+                        }
+                        self.mem.write_h(d19 + c, v).map_err(|e| trap_addr(e, at))?;
+                    }
+                    self.set_r_lower(r1, 0);
+                }
+            }
+            Scal => {
+                // §9.7: compute the branch address, then save PSW bits 0-31
+                // and the eight GPRs (18 halfwords) at the stack save area
+                // derived from the SSD in R1; update the SSD (PTR += INC,
+                // INC = 18); branch.
+                let target = self.ea16(dec, at, true)?;
+                let ssd = self.r(r1);
+                let sector = if ssd & 0x8000_0000 != 0 {
+                    self.psw.dsr
+                } else {
+                    self.dse[self.psw.reg_set as usize][(r1 & 7) as usize]
+                } as u32;
+                let ptr15 = ((ssd >> 16) & 0x7FFF) as u16;
+                let inc = ssd as u16;
+                let off = (ptr15.wrapping_add(inc)) & 0x7FFF;
+                let sa = (sector << 15) | off as u32;
+                if !self.store_f_prot(sa, self.psw.word0(), at)? {
+                    return Ok(());
+                }
+                for n in 0..8u8 {
+                    if !self.store_f_prot(sa + 2 + 2 * n as u32, self.r(n), at)? {
+                        return Ok(());
+                    }
+                }
+                let new_ssd = (ssd & 0x8000_0000) | ((off as u32) << 16) | 18;
+                self.set_r(r1, new_ssd);
+                self.psw.ic = target;
+            }
+            Sret => {
+                // §9.8: conditional (M1 vs CC); on branch, PSW bits 0-31
+                // and all eight GPRs reload from the stack frame addressed
+                // by the SSD in R2.
+                let r2 = operand_reg(dec);
+                if self.cc_mask_test(r1) {
+                    let ssd = self.r(r2);
+                    let sector = if ssd & 0x8000_0000 != 0 {
+                        self.psw.dsr
+                    } else {
+                        self.dse[self.psw.reg_set as usize][(r2 & 7) as usize]
+                    } as u32;
+                    let sa = (sector << 15) | ((ssd >> 16) & 0x7FFF);
+                    let w0 = self.mem.read_f(sa).map_err(|e| trap_addr(e, at))?;
+                    self.psw.set_word0(w0);
+                    for n in 0..8u8 {
+                        let v = self
+                            .mem
+                            .read_f(sa + 2 + 2 * n as u32)
+                            .map_err(|e| trap_addr(e, at))?;
+                        self.set_r(n, v);
+                    }
+                }
+            }
+            Lxar | Lxa => {
+                // §9.12: R1 bits 1-15 from the address constant's bits
+                // 1-15 (bits 0 and 16-31 zeroed); R1's DSE from its bits
+                // 28-31.
+                let cv = match dec.operand {
+                    Operand::R(r2) => self.r(r2),
+                    _ => {
+                        let addr = self.storage_addr(dec, at)?;
+                        self.mem.read_f(addr).map_err(|e| trap_addr(e, at))?
+                    }
+                };
+                self.set_r(r1, cv & 0x7FFF_0000);
+                self.dse[self.psw.reg_set as usize][(r1 & 7) as usize] = (cv & 0xF) as u8;
+            }
+            Stxar | Stxa => {
+                // §9.14: store R1's extended address as a fullword address
+                // constant: bit 0 set, bits 1-15 from R1, bits 16-19
+                // zeroed, bits 20-27 of the destination unchanged, bits
+                // 28-31 from R1's DSE.
+                let dse =
+                    self.dse[self.psw.reg_set as usize][(r1 & 7) as usize] as u32;
+                let make = |old: u32, r1v: u32| {
+                    0x8000_0000 | (r1v & 0x7FFF_0000) | (old & 0x0000_0FF0) | dse
+                };
+                match dec.operand {
+                    Operand::R(r2) => {
+                        let v = make(self.r(r2), self.r(r1));
+                        self.set_r(r2, v);
+                    }
+                    _ => {
+                        let addr = self.storage_addr(dec, at)?;
+                        let old = self.mem.read_f(addr).map_err(|e| trap_addr(e, at))?;
+                        let v = make(old, self.r(r1));
+                        self.store_f_prot(addr, v, at)?;
+                    }
+                }
+            }
+            Ldm => {
+                // §9.13: DSEs for R0-R3 of the current set from the four
+                // low nibbles of the operand's bytes.
+                let addr = self.storage_addr(dec, at)?;
+                let v = self.mem.read_f(addr).map_err(|e| trap_addr(e, at))?;
+                for n in 0..4usize {
+                    self.dse[self.psw.reg_set as usize][n] =
+                        ((v >> (24 - 8 * n)) & 0xF) as u8;
+                }
+            }
+            Stdm => {
+                // §9.15: store the DSEs for R0-R3.
+                let addr = self.storage_addr(dec, at)?;
+                let set = self.psw.reg_set as usize;
+                let v = ((self.dse[set][0] as u32) << 24)
+                    | ((self.dse[set][1] as u32) << 16)
+                    | ((self.dse[set][2] as u32) << 8)
+                    | self.dse[set][3] as u32;
+                self.store_f_prot(addr, v, at)?;
             }
         }
         Ok(())
@@ -1525,6 +1759,11 @@ impl Cpu {
         self.psw.cc = cc::ZERO;
         Ok(())
     }
+}
+
+/// MVH destination offset: bits 1-15 of R1 (§9.4).
+fn r2v_dest(r1v: u32) -> u16 {
+    ((r1v >> 16) & 0x7FFF) as u16
 }
 
 fn operand_reg(dec: &Decoded) -> u8 {

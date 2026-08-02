@@ -37,6 +37,12 @@ pub struct AddressError {
 
 pub struct Memory {
     hw: Vec<u16>,
+    /// Storage protection bit per halfword (§2.4): a store to a protected
+    /// location causes a program interrupt and does not occur. Set/reset
+    /// by the privileged ISPB instruction (§9.2). The AP-101S carries
+    /// three voted protection bits per halfword (§2.1.1); they are modeled
+    /// as one.
+    protect: Vec<bool>,
 }
 
 impl Memory {
@@ -46,7 +52,7 @@ impl Memory {
             halfwords <= DEFAULT_SIZE_HALFWORDS,
             "AP-101S addressing is limited to 2^19 halfwords"
         );
-        Memory { hw: vec![0; halfwords] }
+        Memory { hw: vec![0; halfwords], protect: vec![false; halfwords] }
     }
 
     /// Full-size (2^19 halfword) memory.
@@ -118,6 +124,16 @@ impl Memory {
         } else {
             (h & 0xFF00) | v as u16
         };
+        Ok(())
+    }
+
+    pub fn is_protected(&self, addr: u32) -> bool {
+        self.protect.get(addr as usize).copied().unwrap_or(false)
+    }
+
+    pub fn set_protected(&mut self, addr: u32, on: bool) -> Result<(), AddressError> {
+        let i = self.check(addr)?;
+        self.protect[i] = on;
         Ok(())
     }
 

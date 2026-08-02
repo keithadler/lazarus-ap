@@ -11,11 +11,14 @@ instruction-level test suite. No HAL/S compiler, no flight software yet.
 
 ## What works
 
-- 121 instructions: the fixed-point, branching, shift, and logical
+- 137 instructions: the fixed-point, branching, shift, and logical
   sections plus (phase 2) the full floating-point set — IBM hexadecimal
   short/long formats with guard-digit prealignment and the §8.8
   exception rules — and the status-switching set (LPS, SPM, SSM, SVC,
-  TS). Each is implemented from its Principles-of-Operation page and
+  TS), the stack calls (SCAL/SRET), the DSE/extended-address set
+  (LXA/STXA/LDM/STDM), MVH, TSB, and ISPB with real per-halfword storage
+  protection and the instruction monitor. Each is implemented from its
+  Principles-of-Operation page and
   covered by tests asserting encoding, effect, and condition code —
   including the carry/overflow indicator rules that existing emulators
   skip.
@@ -36,9 +39,10 @@ instruction-level test suite. No HAL/S compiler, no flight software yet.
 
 ## What doesn't (yet — all trap rather than guess)
 
-- Machine-check/system/timer interrupts, storage protection, I/O (IOP),
-  the stack and DSE-loading instructions (SCAL/SRET, LXA/LDM...), MVH,
-  and the fullword-indirect addressing modes.
+- Machine-check/system/timer interrupts and I/O (IOP, plus the
+  I/O-dependent PC/ICR/DIAG instructions) — the phase-3 bus work.
+- One addressing mode: the Figure 2-17 fullword indirect pointer with
+  postindexing (X≠0, IA=1, I=1).
 - Timing: this is an instruction-level emulator, not cycle-accurate.
 
 See [docs/ISA_STATUS.md](docs/ISA_STATUS.md) for the per-instruction
@@ -57,7 +61,7 @@ cargo build
 cargo test
 ```
 
-`cargo test` runs the whole suite (135 tests: unit, per-instruction,
+`cargo test` runs the whole suite (142 tests: unit, per-instruction,
 addressing-mode, and golden-trace) and reports pass/fail per test.
 
 ## Run a program

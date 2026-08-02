@@ -563,10 +563,11 @@ fn fixed_point_overflow_interrupt_when_unmasked() {
 #[test]
 fn unimplemented_and_illegal_trap() {
     use lazarus_ap::Trap;
-    // MVH (special op) decodes but traps as unimplemented.
+    // ICR (I/O-dependent internal control) decodes but traps as
+    // unimplemented.
     let mut c = cpu8k();
-    let t = exec1_err(&mut c, &[0b01101_001_11101_010]);
-    assert!(matches!(t, Trap::Unimplemented { mnemonic: "MVH", .. }));
+    let t = exec1_err(&mut c, &[0b11011_001_11100_010]);
+    assert!(matches!(t, Trap::Unimplemented { mnemonic: "ICR", .. }));
     // ST has no RR form: illegal instruction. With no program-exception
     // handler installed, the emulator falls back to the typed trap.
     let mut c = cpu8k();

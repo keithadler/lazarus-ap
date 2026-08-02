@@ -178,28 +178,47 @@ others: past it).
 | SVC | VERIFIED | §9.9 |
 | TS | VERIFIED | three-state CC then set all ones; atomic (trivially — no concurrent bus masters yet) (§9.10) |
 
-## Remaining special operations — NOT IMPLEMENTED (encodings verified)
+## Special operations (§9) — implemented (phase 2)
 
-DIAG, ISPB, MVH, SCAL, SRET, TSB, LXA/LXAR, LDM, STXA/STXAR, STDM,
-ICR, PC. These need storage protection, the stack convention, DSE
-loading, or the IOP. All decode and trap with their mnemonic.
+| Instr | Status | Notes |
+|---|---|---|
+| ISPB | VERIFIED | privileged; M1 selects set/reset × halfword/fullword; M1 1xx illegal; halfword index alignment (§9.2) |
+| MVH | PARTIAL | §9.4 block move with DSR/DSE sector selection, high-address-first, count left in R1; store-protect violation backs the IC up with the remaining count. Executed atomically (no async interrupts yet); the §9.4 ANOMALY (source = destination+1 with differing MSBs) is not replicated |
+| SCAL / SRET | VERIFIED | 18-halfword stack frame (PSW word 0 + 8 GPRs), SSD update PTR+=INC/INC=18, conditional restore (§9.7/9.8) |
+| TSB | VERIFIED | three-state test then OR, atomic (§9.11) |
+| LXAR/LXA, STXAR/STXA | VERIFIED | fullword address-constant load/store of R1 bits 1-15 + its DSE; STXA keeps destination bits 20-27 (§9.12/9.14) |
+| LDM, STDM | VERIFIED | R0-R3 DSEs as packed nibbles (§9.13/9.15); only R0-R3 — R4-R7 DSEs are not covered, as §9.4's notes warn |
 
-## Addressing-mode gap (PARTIAL, applies to all RS-indexed forms)
+## Storage protection and instruction monitor (§2.4) — implemented (phase 2)
 
-The **fullword indirect address pointer** modes (RS indexed with IA=1 and
-I=1, and X=0/IA=0 variants thereof — §2.2.8 steps 7 and 10, Figure 2-17,
-including automatic storage modification and the BSV/DSV/PSW-modify
-control bits) are decoded but trap as `UnimplementedAddressing`. All
-other §11.1 modes (SRS, RS extended, indexed, IC-relative ±, halfword
-indirect, postindexed indirect, automatic index modification) are
-implemented and tested.
+Every CPU store checks the per-halfword protection bit: a violation takes
+the unmaskable program interrupt (code 0007) and the store does not
+occur. The instruction monitor (PSW bit 34) interrupts through 0070/0074
+on executing an unprotected instruction word, IC left at the offender
+(AP-101S behavior, §2.4.1). The Figure 2-20 anomaly notes about CC=10 in
+the old PSW for these interrupts are not replicated.
+
+## I/O-dependent operations — NOT IMPLEMENTED (encodings verified)
+
+DIAG, ICR (internal control: timers), PC (program-controlled I/O, §3.3).
+These are the IOP phase. All decode and trap with their mnemonic.
+
+## Addressing-mode gap (PARTIAL)
+
+One mode remains unimplemented: the **fullword indirect address pointer
+with postindexing** (RS indexed, X≠0/IA=1/I=1 — §2.2.8 step 10, Figure
+2-17, with its Xc/C/CB/CD/BSV/DSV control bits). It traps as
+`UnimplementedAddressing`; the Figure 2-17 flowchart page needs a
+higher-quality read before implementation. Everything else in the §11.1
+chart is implemented and tested, including the X=0 fullword indirect
+with automatic storage modification (Figure 2-15).
 
 ## Interrupts (other classes), protection, timing — NOT IMPLEMENTED
 
 - Program-exception and SVC interrupts are modeled (above). Machine
   check, system/external, and interval-timer interrupts are not (I/O
   phases).
-- Storage protection and the instruction monitor (§2.4) are not modeled.
+- Storage protection and the instruction monitor are modeled (above).
 - Timing (§16-§17) is not modeled; this is an instruction-level emulator.
 
 ## UNVERIFIED / open questions
