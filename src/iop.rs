@@ -135,6 +135,24 @@ pub struct Bce {
     pub status: u32,
     /// Program-exception state (STAT1): true = an error was recorded.
     pub error: bool,
+    /// An in-progress receive (§3.4): reception is asynchronous on the
+    /// hardware — the BCE waits up to MTO (units of 16.5 µs; one step
+    /// here) for each input word. The instruction stays current until
+    /// the stream completes or times out.
+    pub rx: Option<RxState>,
+}
+
+#[derive(Debug, Clone)]
+pub struct RxState {
+    remaining: u32,
+    addr: u32,
+    /// Instruction length to add to the PC on completion.
+    ilen: u32,
+    /// Steps left before a timeout is declared.
+    timer: u32,
+    /// Whether any word of the stream has arrived (initial vs ordinary
+    /// timeout, Table 1.2 bits 25/26).
+    got_any: bool,
 }
 
 pub const NUM_BCES: usize = 24;
@@ -308,6 +326,7 @@ impl Iop {
     /// raised, Wait State entered.
     fn bce_error(&mut self, n: usize, bits: u32) {
         let b = &mut self.bces[n];
+        b.rx = None;
         b.status |= bits;
         b.error = true;
         b.indicator = true;
@@ -320,6 +339,12 @@ impl Iop {
     /// p. III-11) is n+1.
     fn step_bce(&mut self, n: usize, mem: &mut crate::mem::Memory, buses: &mut dyn BusFabric) {
         let num = n as u32 + 1;
+        // Resume an in-progress receive without re-decoding (a #MIN's
+        // command must not be retransmitted on resume).
+        if self.bces[n].rx.is_some() {
+            self.receive_pump(n, mem, buses);
+            return;
+        }
         let pc = self.bces[n].pc & 0x3FFFF;
         let hw1 = mem.read_h(pc).unwrap_or(0) as u32;
         let hw2 = mem.read_h(pc.wrapping_add(1) & 0x3FFFF).unwrap_or(0) as u32;
@@ -561,11 +586,11 @@ impl Iop {
         b.pc = (b.pc + ilen) & 0x3FFFF;
     }
 
-    /// Common receive path (#RDS/#RDL/#MIN data phase): `count` halfwords
-    /// into `start`. Absence of bus data stands in for the hardware's
-    /// MTO timeout (timing unmodeled): initial timeout if nothing
-    /// arrived, ordinary timeout mid-stream. Validity checks per Table
-    /// 1.2: command sync mid-stream, SEV pattern, IUA signature.
+    /// Begin a receive (#RDS/#RDL/#MIN data phase): `count` halfwords
+    /// into `start`. The BCE then pumps the stream one time slice at a
+    /// time, waiting up to the MTO register's count (one step per 16.5
+    /// µs unit) for each word — first-word latency and interword gaps
+    /// per §3.4.1-3.4.8.
     fn receive_data(
         &mut self,
         n: usize,
@@ -575,19 +600,49 @@ impl Iop {
         count: u32,
         ilen: u32,
     ) {
-        for i in 0..count {
+        let timer = self.bces[n].mto;
+        self.bces[n].rx = Some(RxState {
+            remaining: count,
+            addr: start,
+            ilen,
+            timer,
+            got_any: false,
+        });
+        self.receive_pump(n, mem, buses);
+    }
+
+    /// One time slice of an in-progress receive: drain available words
+    /// (validity-checked per Table 1.2), or burn one timeout tick.
+    fn receive_pump(
+        &mut self,
+        n: usize,
+        mem: &mut crate::mem::Memory,
+        buses: &mut dyn BusFabric,
+    ) {
+        let mut st = self.bces[n].rx.take().expect("receive in progress");
+        loop {
+            if st.remaining == 0 {
+                let b = &mut self.bces[n];
+                b.pc = (b.pc + st.ilen) & 0x3FFFF;
+                return;
+            }
             let w = if self.rcvr_enabled(n) { buses.receive(n) } else { None };
             let w = match w {
                 Some(w) => w,
                 None => {
-                    self.bce_error(
-                        n,
-                        if i == 0 {
-                            bce_status::INITIAL_TIMEOUT
-                        } else {
-                            bce_status::TIMEOUT
-                        },
-                    );
+                    if st.timer == 0 {
+                        self.bce_error(
+                            n,
+                            if st.got_any {
+                                bce_status::TIMEOUT
+                            } else {
+                                bce_status::INITIAL_TIMEOUT
+                            },
+                        );
+                    } else {
+                        st.timer -= 1;
+                        self.bces[n].rx = Some(st);
+                    }
                     return;
                 }
             };
@@ -598,8 +653,6 @@ impl Iop {
             let iua = (w.info >> 19) as u8 & 0x1F;
             let sev = w.info & 7;
             if iua != self.bces[n].iuar {
-                // Signature mismatch: flag plus the IUA ORed into IBM
-                // bits 8-12 (Table 1.2).
                 self.bce_error(
                     n,
                     bce_status::SIG_MISMATCH | ((iua as u32) << 19),
@@ -611,10 +664,12 @@ impl Iop {
                 return;
             }
             let data = (w.info >> 3) as u16;
-            let _ = mem.write_h((start + i) & 0x3FFFF, data);
+            let _ = mem.write_h(st.addr & 0x3FFFF, data);
+            st.remaining -= 1;
+            st.addr += 1;
+            st.got_any = true;
+            st.timer = self.bces[n].mto;
         }
-        let b = &mut self.bces[n];
-        b.pc = (b.pc + ilen) & 0x3FFFF;
     }
 
     fn err(&mut self, bit: u32) {

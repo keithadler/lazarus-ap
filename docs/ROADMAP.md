@@ -57,7 +57,14 @@ its silence (empty mailbox disagrees with everyone); sync discretes are
 cross-wired GPC-to-GPC and a software barrier over them works (raise
 own line via PCO, poll all lines via PCI); and a force-voted actuator
 model taps the flight-critical buses — the outlier port is bypassed and
-the surface follows the healthy command. Remaining for full phase 4:
+the surface follows the healthy command. Also working: a BFS-style
+fifth GPC (all-listener, transmitter disabled) that shadows the
+exchange invisibly and reaches the majority verdict; bus-level fault
+injection (garbled SEV bits — receivers reject the words and the set
+votes out the victim, who sees a healthy world, exactly the ambiguity
+real cross-strapping addressed); and clock skew (a quarter-speed GPC),
+absorbed by resumable MTO-governed reception (§3.4). Remaining for
+full phase 4:
 
 - N `Cpu` instances (target 4 PASS + 1 BFS-style listener) with:
   - inter-computer communication (ICC) buses,

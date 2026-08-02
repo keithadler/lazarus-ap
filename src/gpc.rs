@@ -85,9 +85,15 @@ impl ForceVotedActuator {
         }
     }
 
-    /// Bus tap: record data words addressed to this actuator.
+    /// Bus tap: record data words addressed to this actuator. Words with
+    /// an invalid SEV pattern are rejected, as a real interface unit
+    /// rejects garbled transmissions (App. III Table 1.2 validity rules).
     fn observe(&mut self, bus: usize, w: BusWord) {
-        if bus < 4 && !w.cmd_sync && (w.info >> 19) as u8 == self.iua {
+        if bus < 4
+            && !w.cmd_sync
+            && (w.info >> 19) as u8 == self.iua
+            && w.info & 7 == 0b101
+        {
             self.ports[bus] = Some((w.info >> 3) as u16 as i16);
         }
     }
@@ -137,16 +143,25 @@ pub struct RedundantSet {
     /// the crudest fault model; richer ones inject at memory/bus level.
     pub dead: Vec<Option<Trap>>,
     pub actuators: Vec<ForceVotedActuator>,
+    /// Bus-level fault injection: data words transmitted on this bus are
+    /// delivered with their SEV validity bits corrupted — a garbled
+    /// transmission every receiver's validity checks will reject.
+    pub corrupt_bus: Option<usize>,
 }
 
 struct FabricView<'a> {
     me: usize,
     rx: &'a mut [Vec<VecDeque<BusWord>>],
     actuators: &'a mut [ForceVotedActuator],
+    corrupt_bus: Option<usize>,
 }
 
 impl BusFabric for FabricView<'_> {
     fn transmit(&mut self, bus: usize, w: BusWord) {
+        let mut w = w;
+        if self.corrupt_bus == Some(bus) && !w.cmd_sync {
+            w.info &= !7; // garble the SEV validity pattern
+        }
         for (g, q) in self.rx.iter_mut().enumerate() {
             if g != self.me {
                 q[bus].push_back(w);
@@ -172,27 +187,32 @@ impl RedundantSet {
                 .collect(),
             dead: vec![None; n],
             actuators: Vec::new(),
+            corrupt_bus: None,
         }
     }
 
-    /// Advance every live GPC one time slice, then cross-wire the sync
-    /// discretes: GPC i's discrete output appears as discrete input
-    /// line i on every GPC (its own included, matching the loopback a
-    /// machine sees of its own line).
-    pub fn step(&mut self) {
-        for (i, gpc) in self.gpcs.iter_mut().enumerate() {
-            if self.dead[i].is_some() {
-                continue;
-            }
-            let mut view = FabricView {
-                me: i,
-                rx: &mut self.rx,
-                actuators: &mut self.actuators,
-            };
-            if let Err(t) = gpc.step(&mut view) {
-                self.dead[i] = Some(t);
-            }
+    /// Advance one GPC one time slice (building block for skewed
+    /// clocks: step machines at different rates to model oscillator
+    /// drift).
+    pub fn step_one(&mut self, i: usize) {
+        if self.dead[i].is_some() {
+            return;
         }
+        let mut view = FabricView {
+            me: i,
+            rx: &mut self.rx,
+            actuators: &mut self.actuators,
+            corrupt_bus: self.corrupt_bus,
+        };
+        if let Err(t) = self.gpcs[i].step(&mut view) {
+            self.dead[i] = Some(t);
+        }
+    }
+
+    /// Cross-wire the sync discretes: GPC i's discrete output appears as
+    /// discrete input line i on every GPC (its own included, matching
+    /// the loopback a machine sees of its own line).
+    pub fn wire_discretes(&mut self) {
         let lines: u32 = self
             .gpcs
             .iter()
@@ -202,6 +222,14 @@ impl RedundantSet {
         for gpc in &self.gpcs {
             gpc.iop.borrow_mut().discrete_in = lines;
         }
+    }
+
+    /// Advance every live GPC one time slice, then rewire discretes.
+    pub fn step(&mut self) {
+        for i in 0..self.gpcs.len() {
+            self.step_one(i);
+        }
+        self.wire_discretes();
     }
 
     pub fn run(&mut self, steps: usize) {

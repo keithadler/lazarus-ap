@@ -82,9 +82,13 @@ table branch, then #TDS→#RDS data transfer across GPC memory spaces.
 This is the seam the phase-4 redundant set plugs into.
 
 Deviations/choices (all deliberate, revisit with timing):
-- Timeouts: MTO timing is unmodeled; an exhausted receive queue records
-  INITIAL_TIMEOUT/TIMEOUT. Gap errors (21.5 µs / 5 µs) cannot occur.
-- Transfers are atomic per instruction step; the hardware interleaves
+- Receive timing IS modeled at slice granularity: reception is
+  resumable (§3.4) — the BCE waits up to the MTO register's count (one
+  step per 16.5 µs unit) for the first word and for each interword
+  gap, then declares INITIAL_TIMEOUT/TIMEOUT per Table 1.2. Transmit
+  gap errors (21.5 µs / 5 µs) still cannot occur (transmission is
+  atomic).
+- Transmits are atomic per instruction step; the hardware interleaves
   at 16.5 µs granularity. `Iop::step` = one MSC + one instruction per
   busy BCE, mirroring the time-shared design (§1.3).
 - The MIA-busy condition never holds (transmission is instantaneous),

@@ -68,7 +68,7 @@ SK3:    STH  4,VERDICT
 DONE:   B    DONE
 INA:    DC   H(40)
 INB:    DC   H(2)
-BUDGET: DC   H(30)
+BUDGET: DC   H(200)
 VERDICT: DC  H(0)
 "
     )
@@ -105,19 +105,21 @@ fn tx_program(i: u16) -> [u16; 7] {
     ]
 }
 
-/// Listener program for bus `j` (BCE j of every other GPC): base, #WIX
-/// through a one-entry branch table to a #RDS into mailbox j, flag, wait.
-/// Returns (image, wix table entry target offset).
+/// Listener program for bus `j` (BCE j of every other GPC): base and
+/// receive patience (#LTOI — the MTO register governs how long the BCE
+/// waits for each input word, §3.4), then #WIX through a one-entry
+/// branch table to a #RDS into mailbox j, flag, wait.
 fn listener_program(j: u16, at: u32) -> [u16; 10] {
-    let rds_at = (at + 3) as u16;
+    let rds_at = (at + 4) as u16;
     [
         0xF200,
         0x1000,          // #LBR 0x1000
-        0b00100_000_0000_0101, // #WIX disp 5 -> table at at+8
+        0xB000 | 500,    // #LTOI 500: wait up to 500 slices per word
+        0b00100_000_0000_0011, // #WIX disp 3 -> table at at+8
         0x6000 | j,      // #RDS count 0, disp j
         0xE800,          // #SIB
         0x0800,          // #WAT
-        0, 0,            // pad
+        0,               // pad
         0, rds_at,       // table entry 0 (fullword) -> the #RDS
     ]
 }
@@ -220,7 +222,7 @@ fn a_dead_gpc_is_outvoted_too() {
     let mut gpcs: Vec<Gpc> = (0..4).map(|id| build_gpc(id, false)).collect();
     gpcs[1].cpu.mem.write_h(0x100, 0b00110_001_11100_010).unwrap(); // ST has no RR form: illegal
     let mut set = RedundantSet::new(gpcs);
-    set.run(800);
+    set.run(4000);
     assert!(set.dead[1].is_some(), "GPC 1 trapped");
     let verdict_addr = assemble(&cpu_program(0)).unwrap().label("VERDICT").unwrap();
     for i in [0usize, 2, 3] {
@@ -283,5 +285,119 @@ MARK:   DC   H(0)
             "GPC {i} passed the barrier"
         );
         assert_eq!(gpc.iop.borrow().discrete_in, 0xF000_0000);
+    }
+}
+
+#[test]
+fn bfs_style_fifth_listener_shadows_the_set() {
+    // A fifth GPC joins with every BCE in listen mode and no transmitter
+    // — the Backup Flight System arrangement: it hears everything, says
+    // nothing. Running the SAME software image (id 4), it assembles the
+    // full mailbox picture from the buses and reaches the same verdict
+    // as the healthy PASS machines, while remaining invisible to them.
+    let mut gpcs: Vec<Gpc> = (0..4).map(|id| build_gpc(id, id == 2)).collect();
+    let bfs = build_gpc(4, false);
+    bfs.iop.borrow_mut().mia_xmtr_enable = 0; // pure listener
+    gpcs.push(bfs);
+    let mut set = RedundantSet::new(gpcs);
+    set.run(500);
+
+    let verdict_addr = assemble(&cpu_program(0)).unwrap().label("VERDICT").unwrap();
+    // The BFS shadowed the exchange and votes with the majority.
+    let bfs = &set.gpcs[4];
+    let boxes: Vec<u16> = (0..4)
+        .map(|j| bfs.cpu.mem.read_h(MBOX + j).unwrap())
+        .collect();
+    assert_eq!(boxes, vec![42, 42, 13, 42], "BFS heard all four values");
+    assert_eq!(
+        bfs.cpu.mem.read_h(verdict_addr).unwrap(),
+        0b0100,
+        "BFS reaches the majority verdict"
+    );
+    // ...and the PASS machines never heard from it.
+    for i in 0..4 {
+        let gpc = &set.gpcs[i];
+        assert_eq!(
+            gpc.cpu.mem.read_h(MBOX + 4).unwrap(),
+            0,
+            "GPC {i}: no trace of the BFS on the buses"
+        );
+        assert_eq!(
+            gpc.cpu.mem.read_h(verdict_addr).unwrap(),
+            if i == 2 { 0b1011 } else { 0b0100 }
+        );
+    }
+}
+
+#[test]
+fn garbled_bus_is_indistinguishable_from_a_sick_gpc() {
+    // Corrupt the SEV validity bits of everything GPC 2 transmits — the
+    // machine is HEALTHY, its bus is not. Every listener's validity
+    // checks reject the garbled words (App. III Table 1.2), mailbox 2
+    // never fills, and the set votes GPC 2 out anyway: at the receiver,
+    // a bad bus and a bad GPC look identical. The actuator likewise
+    // rejects the garbled commands and follows the healthy vote.
+    let mut set = RedundantSet::new(
+        (0..4).map(|id| build_gpc(id, false)).collect(),
+    );
+    set.corrupt_bus = Some(2);
+    set.actuators.push(ForceVotedActuator::new(8, 5));
+    set.run(4000);
+
+    let verdict_addr = assemble(&cpu_program(0)).unwrap().label("VERDICT").unwrap();
+    for i in [0usize, 1, 3] {
+        let gpc = &set.gpcs[i];
+        assert_eq!(
+            gpc.cpu.mem.read_h(MBOX + 2).unwrap(),
+            0,
+            "GPC {i}: garbled words rejected, mailbox 2 empty"
+        );
+        assert_eq!(
+            gpc.cpu.mem.read_h(verdict_addr).unwrap(),
+            0b0100,
+            "GPC {i} flags GPC 2"
+        );
+        // the listener BCE on bus 2 recorded the SEV validity error
+        let iop = gpc.iop.borrow();
+        assert!(iop.bces[2].error, "GPC {i} BCE 2 error-terminated");
+        assert_ne!(iop.bces[2].status & (0b111 << 20), 0, "SEV recorded");
+    }
+    // GPC 2 itself heard everyone else fine, agrees with them (it is
+    // healthy!), and flags NOBODY: a machine cannot see its own bus
+    // fault from reception alone — which is why the real DPS
+    // cross-strapped status and let the majority's view prevail.
+    assert_eq!(set.gpcs[2].cpu.mem.read_h(verdict_addr).unwrap(), 0b0000);
+    let act = &mut set.actuators[0];
+    assert_eq!(act.ports[2], None, "actuator rejected garbled commands");
+    assert_eq!(act.output(), Some(42));
+}
+
+#[test]
+fn clock_skew_is_absorbed_by_the_buses() {
+    // GPC 3 runs at quarter speed (oscillator drift, exaggerated). The
+    // serial buses buffer its late transmissions and the poll budgets
+    // absorb the wait: the set still converges on the same verdicts.
+    let mut set = RedundantSet::new(
+        (0..4).map(|id| build_gpc(id, id == 2)).collect(),
+    );
+    for tick in 0..4000usize {
+        for i in 0..4 {
+            if i != 3 || tick % 4 == 0 {
+                set.step_one(i);
+            }
+        }
+        set.wire_discretes();
+    }
+    let verdict_addr = assemble(&cpu_program(0)).unwrap().label("VERDICT").unwrap();
+    for i in 0..4 {
+        let boxes: Vec<u16> = (0..4)
+            .map(|j| set.gpcs[i].cpu.mem.read_h(MBOX + j).unwrap())
+            .collect();
+        assert_eq!(boxes, vec![42, 42, 13, 42], "GPC {i} mailboxes");
+        assert_eq!(
+            set.gpcs[i].cpu.mem.read_h(verdict_addr).unwrap(),
+            if i == 2 { 0b1011 } else { 0b0100 },
+            "GPC {i} verdict unaffected by skew"
+        );
     }
 }
