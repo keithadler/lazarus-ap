@@ -159,7 +159,7 @@ LOOP:   LH   5,0x1800       ; KEYBUF
         ST   7,0x1A4
         L    2,LSCW         ; task the MSC: C6 <- echo program (PCO
         L    1,PGMADDR      ; LOAD LOCAL STORE, MSC bank C word 6)
-        DC   H(0xD9EA)      ; PC 1,2
+        PC   1,2
         LA   2,GLYPHS       ; restore glyph base
         B    LOOP
 FFCON:  DC   H(0x00FF)

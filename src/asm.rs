@@ -148,6 +148,9 @@ fn table() -> &'static [(&'static str, Kind)] {
         ("XUL", Rr { op5: 0b00000, alt: true }),
         ("CBL", Rr { op5: 0b00001, alt: true }),
         ("LCR", Rr { op5: 0b11101, alt: true }),
+        // PC Input/Output (§3.3): RR, alternate plane. R1 = data
+        // register, R2 = command word register.
+        ("PC", Rr { op5: 0b11011, alt: true }),
         ("NCT", Rr { op5: 0b11100, alt: true }),
         ("SUM", Rr { op5: 0b10011, alt: true }),
         ("BALR", Rr { op5: 0b11100, alt: false }),

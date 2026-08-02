@@ -89,7 +89,13 @@ spec. Remaining:
 - A terminal (later graphical) front end: type on the keyboard, watch
   the (test-software) displays, flip a GPC's mode switch.
 
-## Phase 6 — flight software (legal-path dependent)
+## Phase 6 — flight software (legal-path dependent) — NEXT
+
+Scouting notes for the toolchain-compatibility work: yaGPC2 has no
+dedicated object-file loader module (its mcm.c/halucp.c handle memory
+images); the object-deck tooling lives separately in the Virtual AGC
+tree (ASM101S assembler, lnk101 linker, ibmobjdump viewer) — read
+those to learn the AP-101S object format before writing ours.
 
 - Object-code compatibility with the Virtual AGC toolchain (ASM101S,
   lnk101) so their artifacts run here.
