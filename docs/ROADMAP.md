@@ -50,8 +50,14 @@ sequencer, BCE bus programs, configured only by GPC id — exchange
 computed values over a shared serial-bus fabric via App. III §4 listen
 mode and independently vote. An injected sensor fault on one GPC is
 flagged by all three healthy machines (and the sick machine shows the
-classic votes-against-the-world signature); a killed GPC fail-silences
-without disturbing the others. Remaining for full phase 4:
+classic votes-against-the-world signature). Since then: CPU software
+reaches its own IOP with real PC instructions (PCO/PCI); the redundancy
+software has a poll-timeout protocol, so a killed GPC is voted out by
+its silence (empty mailbox disagrees with everyone); sync discretes are
+cross-wired GPC-to-GPC and a software barrier over them works (raise
+own line via PCO, poll all lines via PCI); and a force-voted actuator
+model taps the flight-critical buses — the outlier port is bypassed and
+the surface follows the healthy command. Remaining for full phase 4:
 
 - N `Cpu` instances (target 4 PASS + 1 BFS-style listener) with:
   - inter-computer communication (ICC) buses,

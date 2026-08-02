@@ -5,22 +5,41 @@
 //! plus a BFS machine listening on the buses. Nothing here loads flight
 //! software; the point is the *mechanisms*: N complete GPCs, a shared
 //! serial-bus fabric where every GPC hears the others (App. III §4
-//! listen mode), and fault injection so divergence and voting are
-//! testable with our own software.
+//! listen mode), cross-wired discrete lines (the sync-discrete
+//! arrangement), force-voting actuators, and fault injection so
+//! divergence and failover are testable with our own software.
 
-use crate::cpu::{Cpu, Trap};
+use crate::cpu::{Cpu, IoSubsystem, PcResponse, Trap};
 use crate::iop::{BusFabric, BusWord, Iop, NUM_BCES};
+use std::cell::RefCell;
 use std::collections::VecDeque;
+use std::rc::Rc;
 
-/// One GPC: an AP-101S CPU and its IOP sharing main storage.
+/// Adapter installing a shared IOP as the CPU's I/O subsystem, so CPU
+/// software drives it with real PC instructions (PCO/PCI command words)
+/// while the [`Gpc`] container can still step it.
+struct IoBridge(Rc<RefCell<Iop>>);
+
+impl IoSubsystem for IoBridge {
+    fn pc(&mut self, cw: u32, data: Option<u32>) -> PcResponse {
+        self.0.borrow_mut().pc(cw, data)
+    }
+}
+
+/// One GPC: an AP-101S CPU and its IOP sharing main storage. The IOP is
+/// reachable both from CPU software (PC instructions through the bridge)
+/// and from the host (via [`Gpc::iop`]).
 pub struct Gpc {
     pub cpu: Cpu,
-    pub iop: Iop,
+    pub iop: Rc<RefCell<Iop>>,
 }
 
 impl Gpc {
     pub fn new(mem: crate::mem::Memory) -> Gpc {
-        Gpc { cpu: Cpu::new(mem), iop: Iop::new() }
+        let iop = Rc::new(RefCell::new(Iop::new()));
+        let mut cpu = Cpu::new(mem);
+        cpu.io = Some(Box::new(IoBridge(iop.clone())));
+        Gpc { cpu, iop }
     }
 
     /// One time slice: one CPU instruction (skipped in the wait state),
@@ -31,18 +50,85 @@ impl Gpc {
         if !self.cpu.psw.wait {
             self.cpu.step()?;
         }
-        self.iop.step(&mut self.cpu.mem, buses);
-        if self.iop.cpu_interrupt.take().is_some() {
+        let mut iop = self.iop.borrow_mut();
+        iop.step(&mut self.cpu.mem, buses);
+        if iop.cpu_interrupt.take().is_some() {
             self.cpu.pending_system[4] = true;
         }
         Ok(())
     }
 }
 
+/// A hydraulic-style force-voted actuator port set: one command port per
+/// flight-critical bus. Ports physically sum their force; a port whose
+/// command persistently deviates from the voted output is bypassed —
+/// the outlier loses. This models the *mechanism* (secondary-actuator
+/// force voting); thresholds and dynamics are ours, not a NASA spec.
+pub struct ForceVotedActuator {
+    /// The subsystem address whose data words this actuator obeys.
+    pub iua: u8,
+    /// Last commanded value per port (port i listens on bus i).
+    pub ports: [Option<i16>; 4],
+    pub bypassed: [bool; 4],
+    /// Deviation from the voted value (inclusive) beyond which a port is
+    /// bypassed.
+    pub tolerance: i32,
+}
+
+impl ForceVotedActuator {
+    pub fn new(iua: u8, tolerance: i32) -> ForceVotedActuator {
+        ForceVotedActuator {
+            iua,
+            ports: [None; 4],
+            bypassed: [false; 4],
+            tolerance,
+        }
+    }
+
+    /// Bus tap: record data words addressed to this actuator.
+    fn observe(&mut self, bus: usize, w: BusWord) {
+        if bus < 4 && !w.cmd_sync && (w.info >> 19) as u8 == self.iua {
+            self.ports[bus] = Some((w.info >> 3) as u16 as i16);
+        }
+    }
+
+    /// The force-voted surface position: the median of the active,
+    /// non-bypassed port commands. Ports outside `tolerance` of the vote
+    /// are latched bypassed (and the vote recomputed without them).
+    pub fn output(&mut self) -> Option<i32> {
+        loop {
+            let mut active: Vec<(usize, i32)> = self
+                .ports
+                .iter()
+                .enumerate()
+                .filter_map(|(i, p)| {
+                    (!self.bypassed[i]).then_some(())?;
+                    p.map(|v| (i, v as i32))
+                })
+                .collect();
+            if active.is_empty() {
+                return None;
+            }
+            active.sort_by_key(|&(_, v)| v);
+            let vote = active[active.len() / 2].1;
+            let mut newly_bypassed = false;
+            for &(i, v) in &active {
+                if (v - vote).abs() > self.tolerance {
+                    self.bypassed[i] = true;
+                    newly_bypassed = true;
+                }
+            }
+            if !newly_bypassed {
+                return Some(vote);
+            }
+        }
+    }
+}
+
 /// N GPCs on a shared serial-bus fabric. A word transmitted by one GPC
 /// on bus `b` is delivered to every other GPC's receive queue for bus
 /// `b` — the flight-critical-bus arrangement that let each machine
-/// listen to the others' traffic.
+/// listen to the others' traffic. Actuators tap the same buses.
 pub struct RedundantSet {
     pub gpcs: Vec<Gpc>,
     /// rx[gpc][bus]: words awaiting that GPC's receiver.
@@ -50,11 +136,13 @@ pub struct RedundantSet {
     /// A GPC that trapped is dead (fail-silent) and no longer steps —
     /// the crudest fault model; richer ones inject at memory/bus level.
     pub dead: Vec<Option<Trap>>,
+    pub actuators: Vec<ForceVotedActuator>,
 }
 
 struct FabricView<'a> {
     me: usize,
     rx: &'a mut [Vec<VecDeque<BusWord>>],
+    actuators: &'a mut [ForceVotedActuator],
 }
 
 impl BusFabric for FabricView<'_> {
@@ -63,6 +151,9 @@ impl BusFabric for FabricView<'_> {
             if g != self.me {
                 q[bus].push_back(w);
             }
+        }
+        for a in self.actuators.iter_mut() {
+            a.observe(bus, w);
         }
     }
 
@@ -80,19 +171,36 @@ impl RedundantSet {
                 .map(|_| (0..NUM_BCES).map(|_| VecDeque::new()).collect())
                 .collect(),
             dead: vec![None; n],
+            actuators: Vec::new(),
         }
     }
 
-    /// Advance every live GPC one time slice.
+    /// Advance every live GPC one time slice, then cross-wire the sync
+    /// discretes: GPC i's discrete output appears as discrete input
+    /// line i on every GPC (its own included, matching the loopback a
+    /// machine sees of its own line).
     pub fn step(&mut self) {
         for (i, gpc) in self.gpcs.iter_mut().enumerate() {
             if self.dead[i].is_some() {
                 continue;
             }
-            let mut view = FabricView { me: i, rx: &mut self.rx };
+            let mut view = FabricView {
+                me: i,
+                rx: &mut self.rx,
+                actuators: &mut self.actuators,
+            };
             if let Err(t) = gpc.step(&mut view) {
                 self.dead[i] = Some(t);
             }
+        }
+        let lines: u32 = self
+            .gpcs
+            .iter()
+            .enumerate()
+            .map(|(i, g)| (g.iop.borrow().discrete_out as u32) << (31 - i))
+            .sum();
+        for gpc in &self.gpcs {
+            gpc.iop.borrow_mut().discrete_in = lines;
         }
     }
 

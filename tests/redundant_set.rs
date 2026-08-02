@@ -23,7 +23,7 @@
 //! BCE i sits in listen mode on bus i.
 
 use lazarus_ap::asm::assemble;
-use lazarus_ap::gpc::{Gpc, RedundantSet};
+use lazarus_ap::gpc::{ForceVotedActuator, Gpc, RedundantSet};
 use lazarus_ap::Memory;
 
 const MBOX: u32 = 0x1000;
@@ -40,15 +40,18 @@ START:  LH   5,INA          ; sensor a
         LA   1,0x1000       ; mailbox base (GR1; B2=11 would mean
                             ; no-base in RS forms, section 2.2.8)
         STH  5,0(2,1)       ; publish my value to my mailbox
-POLL:   LH   6,0(1)         ; wait until all four mailboxes are filled
+        LH   6,BUDGET       ; poll budget: a silent GPC must not stall
+POLL:   AHI  6,-1           ; the set forever (timeout protocol)
+        BC   2,VOTE         ; budget exhausted: vote with what we have
+        LH   7,0(1)         ; wait until all four mailboxes are filled
         BC   4,POLL
-        LH   6,1(1)
+        LH   7,1(1)
         BC   4,POLL
-        LH   6,2(1)
+        LH   7,2(1)
         BC   4,POLL
-        LH   6,3(1)
+        LH   7,3(1)
         BC   4,POLL
-        LFXI 4,0            ; fail mask
+VOTE:   LFXI 4,0            ; fail mask
         CH   5,0(1)         ; vote: compare my value against each GPC
         BC   4,SK0
         AHI  4,1            ; GPC 0 disagrees
@@ -65,6 +68,7 @@ SK3:    STH  4,VERDICT
 DONE:   B    DONE
 INA:    DC   H(40)
 INB:    DC   H(2)
+BUDGET: DC   H(30)
 VERDICT: DC  H(0)
 "
     )
@@ -145,18 +149,21 @@ fn build_gpc(id: u8, faulty: bool) -> Gpc {
     // model): processor enabled, MSC busy at its program, BCE PCs set —
     // own bus transmitter, listeners elsewhere. MIA enables per §4.1:
     // transmitter only on our own bus, receivers on all four.
-    gpc.iop.halted = false;
-    gpc.iop.msc.busy = true;
-    gpc.iop.msc.pc = 0x140;
-    for b in 0..4usize {
-        gpc.iop.bces[b].pc = if b == id as usize {
-            0x200 + 0x10 * b as u32
-        } else {
-            0x280 + 0x10 * b as u32
-        };
+    {
+        let mut iop = gpc.iop.borrow_mut();
+        iop.halted = false;
+        iop.msc.busy = true;
+        iop.msc.pc = 0x140;
+        for b in 0..4usize {
+            iop.bces[b].pc = if b == id as usize {
+                0x200 + 0x10 * b as u32
+            } else {
+                0x280 + 0x10 * b as u32
+            };
+        }
+        iop.mia_xmtr_enable = 1 << (31 - id as u32);
+        iop.mia_rcvr_enable = 0xF000_0000;
     }
-    gpc.iop.mia_xmtr_enable = 1 << (31 - id as u32);
-    gpc.iop.mia_rcvr_enable = 0xF000_0000;
     gpc
 }
 
@@ -165,6 +172,10 @@ fn four_gpcs_vote_out_the_faulty_one() {
     let mut set = RedundantSet::new(
         (0..4).map(|id| build_gpc(id, id == 2)).collect(),
     );
+    // A force-voted actuator taps the four buses (the values the GPCs
+    // broadcast double as its port commands; IUA 8 is the demo's
+    // subsystem address).
+    set.actuators.push(ForceVotedActuator::new(8, 5));
     set.run(400);
 
     // no GPC trapped
@@ -179,9 +190,10 @@ fn four_gpcs_vote_out_the_faulty_one() {
             .collect();
         assert_eq!(boxes, vec![42, 42, 13, 42], "GPC {i} mailboxes");
         // all four BCEs finished their bus programs cleanly
+        let iop = gpc.iop.borrow();
         for b in 0..4 {
-            assert!(gpc.iop.bces[b].indicator, "GPC {i} BCE {b} done");
-            assert!(!gpc.iop.bces[b].error, "GPC {i} BCE {b} clean");
+            assert!(iop.bces[b].indicator, "GPC {i} BCE {b} done");
+            assert!(!iop.bces[b].error, "GPC {i} BCE {b} clean");
         }
         let verdict = gpc.cpu.mem.read_h(verdict_addr).unwrap();
         if i == 2 {
@@ -192,22 +204,84 @@ fn four_gpcs_vote_out_the_faulty_one() {
             assert_eq!(verdict, 0b0100, "GPC {i} flags exactly GPC 2");
         }
     }
+    // The actuator force-votes the same way: the outlier port is
+    // bypassed and the surface follows the healthy command.
+    let act = &mut set.actuators[0];
+    assert_eq!(act.output(), Some(42));
+    assert_eq!(act.bypassed, [false, false, true, false], "port 2 bypassed");
 }
 
 #[test]
 fn a_dead_gpc_is_outvoted_too() {
-    // Kill GPC 1 outright (its CPU program is garbage -> it traps and
-    // never publishes). The others must not hang on its silence forever
-    // in a real system; here the poll loop would spin, so this test
-    // documents today's behavior: fail-silent GPCs stall the exchange,
-    // which is exactly why the real DPS needed sync/timeout protocols —
-    // the next phase. We verify the fail-silence itself.
+    // Kill GPC 1 outright (an illegal instruction: it traps, goes
+    // fail-silent, and never publishes). The survivors' poll budget
+    // expires and they vote with what they have: GPC 1's empty mailbox
+    // disagrees with everyone, so all three flag exactly GPC 1.
     let mut gpcs: Vec<Gpc> = (0..4).map(|id| build_gpc(id, false)).collect();
     gpcs[1].cpu.mem.write_h(0x100, 0b00110_001_11100_010).unwrap(); // ST has no RR form: illegal
     let mut set = RedundantSet::new(gpcs);
-    set.run(50);
+    set.run(800);
     assert!(set.dead[1].is_some(), "GPC 1 trapped");
+    let verdict_addr = assemble(&cpu_program(0)).unwrap().label("VERDICT").unwrap();
     for i in [0usize, 2, 3] {
         assert!(set.dead[i].is_none(), "GPC {i} unaffected");
+        let gpc = &set.gpcs[i];
+        let boxes: Vec<u16> = (0..4)
+            .map(|j| gpc.cpu.mem.read_h(MBOX + j).unwrap())
+            .collect();
+        assert_eq!(boxes, vec![42, 0, 42, 42], "GPC {i} mailboxes");
+        let verdict = gpc.cpu.mem.read_h(verdict_addr).unwrap();
+        assert_eq!(verdict, 0b0010, "GPC {i} flags exactly the silent GPC 1");
+    }
+}
+
+#[test]
+fn sync_discretes_barrier() {
+    // The sync-discrete mechanism: each GPC raises its discrete output
+    // with a real PCO (PC instruction, DISCRETE OUTPUT SET), then polls
+    // the cross-wired discrete inputs (PCI "D.I.A") until all four
+    // lines are up — a hardware barrier, from software.
+    fn barrier_program(id: u8) -> String {
+        format!(
+            "
+        ORG  0x100
+        LFXI 6,{id}         ; stagger: sick of lockstep? each GPC
+DLY:    AHI  6,-1           ; arrives at the barrier at a different time
+        BC   1,DLY
+        L    2,CWSET
+        DC   H(0xD9EA)      ; PC 1,2 - PCO: raise our discrete line
+        L    2,CWDIA
+WAITL:  DC   H(0xD9EA)      ; PC 1,2 - PCI: read the discrete inputs
+        C    1,ALLUP
+        BC   2,WAITL        ; not all up yet (less-than: high bits clear)
+        LFXI 5,1
+        STH  5,MARK         ; through the barrier
+DONE:   B    DONE
+CWSET:  DC   F(0x85100000)
+CWDIA:  DC   F(0x08180000)
+ALLUP:  DC   F(0xF0000000)
+MARK:   DC   H(0)
+"
+        )
+    }
+    let mut gpcs = Vec::new();
+    for id in 0..4u8 {
+        let mut mem = lazarus_ap::Memory::new(0x2000);
+        let prog = assemble(&barrier_program(id)).unwrap();
+        prog.load(&mut mem).unwrap();
+        let mut gpc = Gpc::new(mem);
+        gpc.cpu.psw.ic = 0x100;
+        gpcs.push(gpc);
+    }
+    let mut set = RedundantSet::new(gpcs);
+    let mark = assemble(&barrier_program(0)).unwrap().label("MARK").unwrap();
+    set.run(120);
+    for (i, gpc) in set.gpcs.iter().enumerate() {
+        assert_eq!(
+            gpc.cpu.mem.read_h(mark).unwrap(),
+            1,
+            "GPC {i} passed the barrier"
+        );
+        assert_eq!(gpc.iop.borrow().discrete_in, 0xF000_0000);
     }
 }

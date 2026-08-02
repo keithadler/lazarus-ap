@@ -208,6 +208,11 @@ pub struct Iop {
     pub mia_rcvr_enable: u32,
     /// Discrete output register.
     pub discrete_out: bool,
+    /// Discrete inputs (PCI "D.I.A (1-32)", App. I p. I-5): lines driven
+    /// by external equipment — in the redundant set, the other GPCs'
+    /// discrete outputs (the sync-discrete arrangement). IBM bit i =
+    /// line i.
+    pub discrete_in: u32,
     /// PROCESSOR HALT / PROCESSOR ENABLE state (App. I p. I-4): halted
     /// processors do not sequence.
     pub halted: bool,
@@ -239,6 +244,7 @@ impl Default for Iop {
             mia_xmtr_enable: 0,
             mia_rcvr_enable: 0,
             discrete_out: false,
+            discrete_in: 0,
             halted: true,
             interrupts_enabled: false,
             msc_errors: 0,
@@ -1077,6 +1083,7 @@ impl IoSubsystem for Iop {
                 PcResponse::Input(if self.discrete_out { 0x8000_0000 } else { 0 })
             }
             (false, 0x1004_0000) => PcResponse::Input(self.busy_wait_register()),
+            (false, 0x0818_0000) => PcResponse::Input(self.discrete_in),
             (false, c @ (0x0800_0000 | 0x0804_0000 | 0x0808_0000 | 0x080C_0000
             | 0x0810_0000)) => {
                 let idx = ((c >> 18) & 0x7) as usize; // data-select low bits
