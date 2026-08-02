@@ -46,7 +46,9 @@ executing here: 228&nbsp;KB of machine, running real flight-compiler output.
 <a href="index.html">&larr; back to the guided resource</a></p>
 
 <div class="controls">
-  <button class="p" id="run">Run</button>
+  <select id="psel" style="font:13px/1.4 ui-monospace,Menlo,monospace;padding:5px;
+   background:var(--ground);color:var(--ink);border:1px solid var(--line);border-radius:2px"></select>
+ <button class="p" id="run">Run</button>
   <button id="step1">Step</button>
   <button id="step100">+100</button>
   <button id="reset">Reset</button>
@@ -78,6 +80,29 @@ executing here: 228&nbsp;KB of machine, running real flight-compiler output.
   <div class="gpcs" id="gpcs"></div>
   <p class="note mono" id="act"></p>
 </section>
+
+<section class="panel" style="margin-top:14px">
+  <p class="placard">Flight routines &mdash; run NASA's own mathematics</p>
+  <div class="controls" style="margin:0 0 8px">
+    <select id="rsel" style="font:13px/1.4 ui-monospace,Menlo,monospace;padding:5px;
+      background:var(--ground);color:var(--ink);border:1px solid var(--line);border-radius:2px"></select>
+    <button class="p" id="rrun">Run routine</button>
+    <span class="mono" id="rout" style="color:var(--dim)"></span>
+  </div>
+  <p class="note" id="rdesc"></p>
+</section>
+
+<section class="panel" style="margin-top:14px">
+  <p class="placard">Crew stations &mdash; three CRTs, three computers</p>
+  <p class="note" style="margin:0 0 10px">Click a station, then type on the DPS keypad.
+  Each computer polls only its own CRT; GPC 3 listens to CRT 1 without transmitting.</p>
+  <div class="controls" style="margin:0 0 10px">
+    <button id="st0" class="p">CRT 1</button><button id="st1">CRT 2</button><button id="st2">CRT 3</button>
+    <span class="mono" id="cstat" style="color:var(--dim)"></span>
+  </div>
+  <div class="gpcs" id="crts"></div>
+  <div id="kbd" style="display:grid;grid-template-columns:repeat(8,1fr);gap:4px;margin-top:10px"></div>
+</section>
 <p class="note">Built with <span class="mono">cargo build --target wasm32-unknown-unknown
 --release</span> &mdash; no JavaScript framework, no bundler, no dependencies.</p>
 </div>
@@ -92,14 +117,73 @@ function writeBuf(bytes){ const p = X.buf_reserve(bytes.length);
 function b64(s){ const b = atob(s); const a = new Uint8Array(b.length);
   for (let i=0;i<b.length;i++) a[i]=b.charCodeAt(i); return a; }
 
+
+let CAT = null, station = 0;
+const KEYS = [['0',0],['1',1],['2',2],['3',3],['4',4],['5',5],['6',6],['7',7],
+  ['8',8],['9',9],['A',10],['B',11],['C',12],['D',13],['E',14],['F',15],
+  ['+',16],['-',17],['.',18],['OPS',19],['SPEC',20],['ITEM',21],['EXEC',22],['PRO',23]];
+function bootNamed(i){
+  const p = CAT.programs[i];
+  writeBuf(b64(p.b64)); X.boot(p.entry, p.ioinit, p.intrap, p.iocode, p.iobuf);
+  prev = null; render();
+  document.getElementById('status').textContent = p.blurb;
+}
+function initCatalog(){
+  const ps = document.getElementById('psel');
+  ps.innerHTML = CAT.programs.map((p,i)=>`<option value="${i}">${p.name}</option>`).join('');
+  ps.onchange = ()=>{ if(timer){clearInterval(timer);timer=null;
+    document.getElementById('run').textContent='Run';} bootNamed(+ps.value); };
+  const rs = document.getElementById('rsel');
+  rs.innerHTML = CAT.routines.map((r,i)=>
+    `<option value="${i}">${r.name}  ${r.input}</option>`).join('');
+  rs.onchange = showRoutine; showRoutine();
+  const kb = document.getElementById('kbd');
+  kb.innerHTML = KEYS.map(([l,c])=>`<button data-k="${c}" style="padding:6px 2px;font-size:11px">${l}</button>`).join('');
+  kb.onclick = e => { const k = e.target.dataset.k; if(k===undefined) return;
+    X.crew_key(station, +k); X.crew_step(400); renderCrew(); };
+  X.crew_new(); renderCrew();
+}
+function showRoutine(){
+  const r = CAT.routines[+document.getElementById('rsel').value];
+  document.getElementById('rdesc').innerHTML =
+    `<b>${r.name}</b>${r.desc? ' &mdash; '+r.desc:''} &middot; input <span class="mono">${r.input}</span>`
+    + (r.calls && r.calls!=='&mdash;' && r.calls!=='—' ? ` &middot; calls <span class="mono">${r.calls}</span>`:'')
+    + ` &middot; modern value <span class="mono">${r.want}</span>`;
+  document.getElementById('rout').textContent = '';
+}
+document.getElementById('rrun').onclick = ()=>{
+  const r = CAT.routines[+document.getElementById('rsel').value];
+  writeBuf(b64(r.b64)); X.boot(256, 0, 0, 0, 0);
+  X.step(400000);
+  const hi = (X.peek(r.at)<<16) | X.peek(r.at+1);
+  // decode IBM hexfloat
+  const neg = hi>>>31, ch = (hi>>>24)&0x7F, frac = hi & 0xFFFFFF;
+  const v = frac===0 ? 0 : (neg?-1:1) * frac * Math.pow(16, ch-64-6);
+  document.getElementById('rout').innerHTML =
+    `0x${(hi>>>0).toString(16).toUpperCase().padStart(8,'0')} = <b style="color:var(--accent)">${
+      (Math.abs(v)>=1e-4? v.toPrecision(8) : v)}</b>`;
+};
+function renderCrew(){
+  X.crew_state(); const st = JSON.parse(readBuf());
+  document.getElementById('crts').innerHTML = st.crts.map((scr,i)=>{
+    const kn = {19:'OPS',20:'SPEC',21:'ITEM',22:'EXEC',23:'PRO'};
+    const heard = (st.gpcs[i]||[]).map(k=>kn[k]||k).join(' ');
+    return `<div class="g ${i===station?'ok':''}"><b>CRT ${i+1} &rarr; GPC ${i}</b>
+      <div class="crt mono" style="min-height:70px;font-size:11.5px;padding:7px 8px">${scr}</div>
+      <span class="mono" style="color:var(--dim)">GPC ${i} heard: ${heard||'nothing yet'}</span></div>`;
+  }).join('');
+  document.getElementById('cstat').textContent = 'typing at CRT ' + (station+1);
+}
+[0,1,2].forEach(n=>{ document.getElementById('st'+n).onclick = ()=>{ station = n;
+  [0,1,2].forEach(m=>document.getElementById('st'+m).className = m===n?'p':'');
+  renderCrew(); }; });
+
 async function main(){
-  const [wasm, img] = await Promise.all([
-    fetch('wasm/lazarus_ap.wasm').then(r=>r.arrayBuffer()),
-    fetch('wasm/LAZARUS.b64').then(r=>r.text())
-  ]);
+  const wasm = await fetch('wasm/lazarus_ap.wasm').then(r=>r.arrayBuffer());
   const inst = await WebAssembly.instantiate(wasm, {});
   X = inst.instance.exports; M = X.memory;
-  boot(b64(img.trim()));
+  CAT = await fetch('wasm/catalog.json').then(r=>r.json());
+  initCatalog(); bootNamed(0);
   X.set_new(2, 5); renderSet();
 }
 function boot(image){

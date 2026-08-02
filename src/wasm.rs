@@ -219,4 +219,118 @@ pub extern "C" fn set_state(verdict_addr: u32) {
     buf_put(&out);
 }
 
+// ---- crew stations: three CRTs, three computers ----
+
+static mut CREW: Option<RedundantSet> = None;
+/// Keystrokes each computer has received. The poll loop overwrites the
+/// buffer with the empty marker within a few slices, so the arrival has
+/// to be recorded as it happens rather than sampled by the browser.
+static mut HEARD: Option<alloc::vec::Vec<alloc::vec::Vec<u8>>> = None;
+
+fn crew_ref() -> &'static mut RedundantSet {
+    unsafe { (*core::ptr::addr_of_mut!(CREW)).as_mut().expect("crew_new first") }
+}
+
+/// Three DEUs on display buses 4/5/6, each polled by its own GPC, plus a
+/// fourth machine listening to CRT 1 (the BFS arrangement).
+#[no_mangle]
+pub extern "C" fn crew_new() {
+    const KEYBUF: u32 = 0x1800;
+    let station = |bus: usize, listen: bool| -> Gpc {
+        let mut mem = Memory::new(0x4000);
+        let poll: u32 = (0x0C << 19) | (1 << 16) | 1;
+        mem.load_halfwords(
+            0x200,
+            &[0xF200, KEYBUF as u16, 0xB000 | 200, 0xC000,
+              0b11110001_00000000, 0, (poll >> 16) as u16, poll as u16,
+              0xF000, 0x0204],
+        ).ok();
+        mem.load_halfwords(
+            0x240,
+            &[0xF200, KEYBUF as u16, 0xB000 | 400, 0b011_00000_00000000,
+              0xE800, 0xC000, 0xF000, 0x0243],
+        ).ok();
+        mem.write_h(KEYBUF, 0xFF).ok();
+        let mut g = Gpc::new(mem);
+        g.cpu.psw.wait = true;
+        {
+            let mut iop = g.iop.borrow_mut();
+            iop.halted = false;
+            iop.bces[bus].busy = true;
+            iop.bces[bus].pc = if listen { 0x240 } else { 0x200 };
+            iop.mia_rcvr_enable = 0xFFFF_0000;
+            if listen {
+                iop.bces[bus].iuar = 0x0C;
+            } else {
+                iop.mia_xmtr_enable = 1 << (31 - bus as u32);
+            }
+        }
+        g
+    };
+    let mut set = RedundantSet::new(alloc::vec![
+        station(4, false), station(5, false), station(6, false), station(4, true)
+    ]);
+    for bus in [4usize, 5, 6] {
+        set.subsystems.push(alloc::boxed::Box::new(Deu::new(bus, 0x0C, 5, 22)));
+    }
+    unsafe {
+        CREW = Some(set);
+        HEARD = Some(alloc::vec![alloc::vec::Vec::new(); 4]);
+    }
+}
+
+/// Press a key at station `n` (0-2).
+#[no_mangle]
+pub extern "C" fn crew_key(n: u32, code: u32) {
+    let set = crew_ref();
+    if let Some(d) = set.subsystems[n as usize].as_any_mut().downcast_mut::<Deu>() {
+        d.press(code as u8);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn crew_step(n: u32) {
+    const KEYBUF: u32 = 0x1800;
+    let set = crew_ref();
+    let heard = unsafe { (*core::ptr::addr_of_mut!(HEARD)).as_mut().unwrap() };
+    for _ in 0..n {
+        set.step();
+        for g in 0..set.gpcs.len().min(4) {
+            let k = set.gpcs[g].cpu.mem.read_h(KEYBUF).unwrap_or(0xFF);
+            if k != 0xFF {
+                if heard[g].last() != Some(&(k as u8)) {
+                    heard[g].push(k as u8);
+                }
+                set.gpcs[g].cpu.mem.write_h(KEYBUF, 0xFF).ok();
+            }
+        }
+    }
+}
+
+/// What each computer has heard, and each CRT shows, as JSON.
+#[no_mangle]
+pub extern "C" fn crew_state() {
+    const KEYBUF: u32 = 0x1800;
+    let set = crew_ref();
+    let _ = KEYBUF;
+    let heard = unsafe { (*core::ptr::addr_of!(HEARD)).as_ref().unwrap() };
+    let mut out = alloc::string::String::from("{\"gpcs\":[");
+    for i in 0..set.gpcs.len().min(4) {
+        if i > 0 { out.push(','); }
+        let list: alloc::vec::Vec<alloc::string::String> =
+            heard[i].iter().map(|k| alloc::format!("{k}")).collect();
+        out.push_str(&alloc::format!("[{}]", list.join(",")));
+    }
+    out.push_str("],\"crts\":[");
+    for n in 0..3usize {
+        if n > 0 { out.push(','); }
+        let d = set.subsystems[n].as_any().downcast_ref::<Deu>().unwrap();
+        out.push('"');
+        out.push_str(&d.screen_text().join("\\n"));
+        out.push('"');
+    }
+    out.push_str("]}");
+    buf_put(&out);
+}
+
 extern crate alloc;

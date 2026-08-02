@@ -495,6 +495,17 @@ h2.sect{font-size:22px;font-weight:400;margin:0 0 14px}
   <span class="mono">ANOMALY NOTE</span> &mdash; documented, shipped, and flown for
   thirty years. Written the way you would file them today.</p>
 
+  <p style="max-width:72ch;margin:0 0 16px"><b>Did any of this actually bite in
+  flight?</b> Honestly: there is no public record of a Shuttle mission failing because
+  of these. Two reasons, both worth understanding. First, the flight software was
+  written <i>around</i> them &mdash; comparisons used tolerances, block moves avoided
+  the exclusion zone, ON&nbsp;ERROR was not relied on for matrix inversion. Second,
+  and more to the point, this is precisely what four voting computers are for: a
+  fault that corrupts one machine&rsquo;s arithmetic gets outvoted before it reaches
+  an actuator. These are latent defects in a system engineered on the assumption that
+  latent defects exist. That is the actual lesson &mdash; not that the hardware was
+  bad, but that it was known to be imperfect and flown safely anyway.</p>
+
   <div class="bug">
     <p class="bughdr"><b>AP-101S-1</b> &middot; Floating-point COMPARE reports false
     equality <span class="sev">SEVERITY: HIGH</span></p>
@@ -508,7 +519,10 @@ h2.sect{font-size:22px;font-weight:400;margin:0 0 14px}
     <b>Impact</b> Flight code branching on the equality of two nearly-identical
     scalars takes the wrong branch. Guidance software compares magnitudes constantly.<br>
     <b>Reproduce</b> Execute a CED on the manual&rsquo;s own operand pairs.<br>
-    <b>Workaround</b> Compare against a tolerance, never for equality.</p>
+    <b>Workaround</b> Compare against a tolerance, never for equality.<br>
+    <b>Flight materiality</b> Moderate. Requires two values differing by exactly one
+    bit pattern; disciplined numerical code already avoids equality tests on
+    scalars.</p>
   </div>
 
   <div class="bug">
@@ -529,7 +543,11 @@ h2.sect{font-size:22px;font-weight:400;margin:0 0 14px}
     after it decides on garbage.<br>
     <b>Reproduce</b> Timing-dependent: requires a DMA store-protect violation to land
     inside an instruction that raises an arithmetic interrupt.<br>
-    <b>Workaround</b> None documented. The manual states the behaviour and moves on.</p>
+    <b>Workaround</b> None documented. The manual states the behaviour and moves on.<br>
+    <b>Flight materiality</b> The highest of these. It needs a specific timing
+    coincidence, but its effect &mdash; an arithmetic error that occurred and was then
+    erased before anyone was told &mdash; is exactly the failure mode redundancy is
+    meant to catch, and exactly the kind a single computer could not.</p>
   </div>
 
   <div class="bug">
@@ -545,7 +563,10 @@ h2.sect{font-size:22px;font-weight:400;margin:0 0 14px}
     The programmer is expected to remember the exclusion zone.<br>
     <b>Reproduce</b> Move a block with source = destination + 1 across differing
     sector-bit settings.<br>
-    <b>Workaround</b> The manual&rsquo;s: move fullwords, offset by two halfwords.</p>
+    <b>Workaround</b> The manual&rsquo;s: move fullwords, offset by two halfwords.<br>
+    <b>Flight materiality</b> Low in practice, high if forgotten. The condition is
+    narrow and avoidable, and the manual tells you how to avoid it &mdash; but nothing
+    in the hardware stops you walking into it.</p>
   </div>
 
   <div class="bug">
@@ -566,7 +587,10 @@ h2.sect{font-size:22px;font-weight:400;margin:0 0 14px}
     fallback rather than the handler.<br>
     <b>Status</b> Confirmed against the flight software&rsquo;s own error handler
     (&ldquo;DELETE ON ERROR SUPPORT&rdquo;, 1978) by the Virtual AGC project. This
-    emulator implements the exclusion, so the dead handler stays dead here too.</p>
+    emulator implements the exclusion, so the dead handler stays dead here too.<br>
+    <b>Flight materiality</b> Moderate, and the most modern-feeling defect on the
+    list: code that looks like it handles an error, passes review, and does
+    nothing.</p>
   </div>
 
   <div class="bug" style="border-left-color:var(--dim)">
