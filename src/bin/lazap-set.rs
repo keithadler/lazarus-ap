@@ -19,6 +19,7 @@ fn main() {
     let mut fault: Option<u8> = Some(2);
     let mut kill: Option<usize> = None;
     let mut fast = false;
+    let mut trace = false;
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match a.as_str() {
@@ -28,6 +29,7 @@ fn main() {
                 fault = None;
             }
             "--fast" => fast = true,
+            "--trace" => trace = true,
             _ => {}
         }
     }
@@ -45,6 +47,47 @@ fn main() {
     }
     let mut set = RedundantSet::new(gpcs);
     set.actuators.push(ForceVotedActuator::new(8, 5));
+
+    if trace {
+        // JSON trace for the graphical walkthrough: sampled set state.
+        let mut rows = String::new();
+        let mut nrows = 0;
+        for tick in 0..1600 {
+            set.step();
+            if tick % 4 != 0 {
+                continue;
+            }
+            let mut gs = String::new();
+            for (i, g) in set.gpcs.iter().enumerate() {
+                if i > 0 {
+                    gs.push(',');
+                }
+                let boxes: Vec<String> = (0..4)
+                    .map(|j| g.cpu.mem.read_h(MBOX + j).unwrap().to_string())
+                    .collect();
+                let v = g.cpu.mem.read_h(verdict_addr).unwrap();
+                let dead = set.dead[i].is_some();
+                gs.push_str(&format!(
+                    "[[{}],{},{}]",
+                    boxes.join(","),
+                    v,
+                    if dead { 1 } else { 0 }
+                ));
+            }
+            let out = set.actuators[0].output().unwrap_or(-1);
+            let byp: Vec<String> = (0..4)
+                .filter(|&p| set.actuators[0].bypassed[p])
+                .map(|p| p.to_string())
+                .collect();
+            if nrows > 0 {
+                rows.push(',');
+            }
+            rows.push_str(&format!("[{tick},[{gs}],{out},[{}]]", byp.join(",")));
+            nrows += 1;
+        }
+        println!("{{\"rows\":[{rows}]}}");
+        return;
+    }
 
     println!("AP-101S REDUNDANT SET: 4 PASS + 1 BFS LISTENER");
     match (fault, kill) {
