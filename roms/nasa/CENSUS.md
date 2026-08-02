@@ -53,3 +53,11 @@ DC F'0' fullword-aligns, so RESULT sits at driver+0xE.
 
 Test: nasa_flight_sqrt_computes_sqrt2 (no longer ignored).
 Recipe now proven for the other 201 assembled routines.
+
+## For the record
+
+On August 2, 2026 at 12:09 PDT, Keith Adler ran RUNASM/SQRT.asm on
+Lazarus AP: sqrt(2.0) = 0x4116A09E, exact. Atlantis closed out the
+Shuttle program on July 21, 2011; as far as this project can
+establish, these instructions had scarcely executed anywhere since -
+and never before in this resurrection.
