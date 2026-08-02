@@ -105,3 +105,82 @@ fault that voting computers exist to catch.
 Reproduce: git show f24b937 (fix + regression test).
 Filed because a resurrection that only lists other people's bugs is not
 being honest.
+
+## LAZARUS-2 · A linked image shipped another program's symbol table · FIXED
+
+Component: this project's build artifacts (`roms/lazarus/`).
+Severity: MEDIUM — no effect on execution, total corruption of provenance.
+
+`roms/lazarus/LAZARUS-lnk101.json` was a byte-identical copy of the hello
+fixture's table. LAZARUS was deliberately linked into hello's memory
+layout, and the symbol table was copied along with the layout instead of
+being regenerated from LAZARUS's own object deck.
+
+Impact: the program executed correctly — the emulator only reads the
+runtime entry points from this file, and those were genuinely shared —
+so every test kept passing. What broke was attribution. The walkthrough
+labels each executed address with the routine that owns it, and for
+LAZARUS every one of those labels named a CSECT (`$0HELLO`, `#DHELLO`)
+that does not exist in the program. A resurrection whose whole claim is
+provenance had a file asserting the wrong provenance, silently, with
+green tests. That is the failure mode worth recording, not the byte
+count.
+
+Reproduce: `md5 roms/lazarus/LAZARUS-lnk101.json roms/hello/hello-lnk101.json`
+before the fix; the digests match while the `.fcm` images do not.
+
+Fix: the table was rebuilt from `LAZARUS.obj`. CSECT names come from its
+ESD records (`$0LAZARU`, `#DLAZARU`, `#ELAZARU`, `@0LAZARU`) and sizes
+from the TXT extents — 46 halfwords of code, not hello's 81. `@0LAZARU`
+is an external reference the linker allocates, so it has no TXT extent;
+its extent carries over from hello, justified by the two images being
+byte-identical outside the program's own CSECTs. That byte comparison is
+checked in the repair, so nothing here rests on assumption.
+
+Regression: `tools/check_symtabs.py`, run in CI, fails if two linked
+tables are byte-identical or if a table claims a CSECT its object deck
+never declared. Both checks reproduce this defect when it is reverted.
+
+## LAZARUS-3 · Four flight routines were silently mis-called for months · FIXED
+
+Component: this project's resurrection harness (`tools/resurrect.py`).
+Severity: MEDIUM — four routines reported as "runnable" computed nothing.
+
+`IPROD`, `ISUM`, `DPROD` and `DSUM` had committed images that loaded, ran
+to completion, and returned `Done`. None of them computed its function.
+The harness had exactly one array-driver template — single-precision
+elements, result read from `F0` — and applied it to every array routine
+regardless of what the routine actually declared.
+
+Each routine states its own convention in its `AMAIN` header, and all
+three of ours were wrong:
+
+| Routine | Declares | Harness assumed |
+|---|---|---|
+| `IPROD`, `ISUM` | `INPUT R2 ARRAY(N) INTEGER DP`, `OUTPUT R5` | result in `F0` |
+| `DPROD`, `DSUM` | `INPUT R2 ARRAY(N) SCALAR DP`, 8-byte elements | 4-byte elements |
+
+Three separate faults, each independently sufficient to produce a wrong
+answer: the integer routines return in `R5`, not `F0`; the
+double-precision routines advance the pointer by `4(R2)` rather than
+`2(R2)`, so their array must be built with 8-byte elements *and* a
+two-fullword guard slot ahead of the first, not one; and storing a
+double needs `STED`, the mnemonic the flight code uses 91 times —
+`STD` is not recognised by ASM101S at all.
+
+Impact: no flight consequence; these are our drivers, not NASA's code.
+The routines themselves were correct the whole time. What failed was
+this project's claim about them. They were counted among the "runnable"
+images while returning zero, which is worse than not having them —
+a silent wrong answer presented as a working one.
+
+Reproduce: any pre-fix image, e.g.
+`lazap-call roms/nasa/IPRODRUN.fcm --at 114` returned `00000000`.
+
+Fix: `tools/resurrect.py` now selects one of three driver shapes from a
+table (`ARRAY_KIND`) derived from each routine's own declarations. All
+four rebuild and verify: IPROD 24, ISUM 9, DPROD 24, DSUM 7.
+
+Regression: every routine is re-run and checked against modern
+mathematics by `tools/labcheck.py` in CI, integer results compared as
+raw words rather than reinterpreted as floats — which is what hid this.
