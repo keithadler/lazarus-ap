@@ -18,3 +18,25 @@ expression syntax).
 
 Stub-shape ground truth (from hello.fcm): #QCOUT = 8101 0E20 - hi =
 sector-form entry address, lo = Xc|C|CB set + BSV sector nibble.
+
+## SQRT execution status (2026-08-02, session end)
+
+SQRTRUN.fcm (DRIVER + SQRT, linked standalone at 0x100/0x122) RUNS THE
+COMPLETE FLIGHT ALGORITHM: trace shows the exact published sequence -
+LER/BCF/LFXR/XR/SLDL/SLL (unpack), the Q=1 branch taken correctly for
+2.0, SRA/A/L/DR/A/AR/LFLR (hyperbolic seed), DER/AER + LE/MER/DER/NHI/
+A/LFLR/AER/SER/MER/AER (two Newton-Raphson passes), then AEXIT's
+LH + BCRE returning to the driver, STE, SVC. Control flow is perfect.
+
+BUG: `A R7,C` adds zero - the R1-based (USING A,R1) constant fetches
+miss the #LSQRT table. Prime suspect: SRS fullword displacement
+scaling - our emulator doubles the 6-bit displacement per section
+2.2.5 Figure 2-8 (manual-verified); if ASM101S emits the displacement
+already in halfwords for USING-based operands, the fetch lands at
+A + 2d instead of A + d. Next: disassemble the emitted `A R7,C`
+halfword from SQRTRUN.obj (SQRT csect, the instruction ~byte 0x22),
+compare d against (C-A)=8 bytes, and check a real HALSFC listing or
+yaGPC2 (--start flag) for the authoritative encoding. Also verify the
+LA R1,A relocation target lands on #LSQRT's placement.
+
+Trace: cargo run --bin lazap-trace -- roms/nasa/SQRTRUN.fcm
