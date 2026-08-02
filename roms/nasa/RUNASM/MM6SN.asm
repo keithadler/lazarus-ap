@@ -1,0 +1,107 @@
+*/ Access:      Public Domain, no restrictions believed to exist.
+*/ Filename:    MM6SN.asm
+*/ Purpose:     This is a part of the HAL/S-FC compiler run-time library.
+*/ Reference:   TBD.
+*/ Language:    IBM AP-101S assembly language.
+*/ Contact:     The Virtual AGC Project (www.ibiblio.org/apollo).
+*/ History:     2024-06-18 RSB  Suffixed filename with ".asm".
+*/ Note:        Comments beginning */ in column 1 are from the Virtual AGC 
+*/              Project. Comments beginning merely with * are from the original 
+*/              Space Shuttle development.
+
+         TITLE 'MM6SN--MATRIX(M,N) MATRIX(N,R) MULTIPLY, SP'            00000100
+*
+* WHEN DATA_REMOTE IS IN EFFECT, THE LDM INSTRUCTIONS ARE NEEDED
+* AROUND THE CALL TO THIS RTL ROUTINE BECAUSE R1/R3 IS USED AS
+* A BASE REGISTER. (CR12620)
+*
+MM6SN    AMAIN INTSIC=YES                                               00000200
+*                                                                       00000300
+* COMPUTES THE MATRIX PRODUCT:                                          00000400
+*                                                                       00000500
+*          M(N,R) = M1(M,N) M2(N,R)                                     00000600
+*                                                                       00000700
+*   WHERE ONE OR MORE OF M, N, R IS NOT EQUAL TO 3.                     00000800
+*                                                                       00000900
+         INPUT R2,            MATRIX(M,N) SP                           X00001000
+               R3,            MATRIX(N,R) SP                           X00001100
+               R5,            INTEGER(M) SP                            X00001200
+               R6,            INTEGER(N) SP                            X00001300
+               R7             INTEGER(R) SP                             00001400
+         OUTPUT R1            MATRIX(N,R) SP                            00001500
+         WORK  R4,F0,F2,F3,F4,F5                                        00001600
+*                                                                       00001700
+* ALGORITHM:                                                            00001800
+*   SEE ALGORITHM DESCRIPTION IN MM6DN                                  00001900
+*                                                                       00002000
+         IAL   R3,0           CLEAR LOWER HALVES OR R3 AND R5           00002100
+         IAL   R5,0                                                     00002200
+         XUL   R5,R3          PLACE M IN LOWER HALF OF R3               00002300
+         LR    R5,R7          PLACE R IN R5                             00002400
+         SLL   R5,1           GET # HALFWORDS / ROW OF M2               00002500
+         LFLR  F4,R4          SAVE RETURN ADDRESS                       00002600
+         LR    R4,R6          LOAD N IN R4                              00002700
+         SLL   R4,1           GET # HALFWORDS / ROW OF M1               00002800
+         SRR   R3,16          PLACE M IN UPPER HALF OF R3               00002900
+LOOP3    SRR   R3,16          PLACE M IN LOWER HALF OF R3               00003000
+         LR    R7,R5          PUT # HALFWORDS / ROW OF M2 IN R7         00003100
+         SRL   R7,1           GET BACK R                                00003200
+LOOP2    LFLR  F5,R3          SAVE (ADDR(M2) || M)                      00003300
+         SEDR  F0,F0          CLEAR ACC                                 00003400
+LOOP1    LE    F2,2(R3)       GET ELEMENT OF M2                         00003500
+         ME    F2,2(R2)       MULTIPLY BE ELEMENT OF M1                 00003600
+*
+* The block below (through .MM6SNCONT) has two variants, selected at
+* assembly time and completely invisible to any assembler other than
+* the modern ASM101S.py (which is the only tool that ever pre-defines
+* &ASM101S as true -- see its own comment at the point that happens).
+* Any other/historical assembler never declares &ASM101S at all before
+* this point, so the GBLB below freshly declares it defaulting to
+* binary false, and assembles the ORIGINAL, unmodified logic (i.e.
+* nothing extra here), producing byte-for-byte the same object code as
+* before this comment block existed.
+*
+* THE BUG (yagpc2-yahalmat2-issues.db key
+* mm6sn_display_multiply_residual_source_unidentified, the same
+* register-pair-leak class as MM14SN.asm/id-53 and VX6S3.asm/VV6S3.asm):
+* F2 is loaded here with single-precision LE then ME, leaving its
+* companion register F3 uncleared -- but the very next instruction,
+* AEDR F0,F2, is an EXTENDED (64-bit, F0:F1 += F2:F3) add. F0:F1 is
+* legitimately maintained as a genuine extended-precision running sum
+* across all N iterations of LOOP1 (correctly cleared once per output
+* element by LOOP2's own SEDR F0,F0), but F3 is never cleared anywhere
+* in this routine, so whatever floating-point garbage is sitting in it
+* from unrelated prior work is folded into every one of the N terms of
+* the dot product, not just the first. Confirmed via instruction trace
+* against 029-DATATYPES.hal's "should be identity" display multiplies:
+* stale, non-reproducible F3 garbage (left behind by whichever HAL/S
+* statement most recently executed a genuine extended op before this
+* call) explains the residual noise scattered across nearly every cell
+* of the result matrix, while calls where F3 happened to already be
+* zero from context produce a bit-exact result.
+*
+         GBLB  &ASM101S
+         AIF   (&ASM101S).MM6SNFIX
+         AGO   .MM6SNCONT
+.MM6SNFIX ANOP
+         SER   F3,F3          CLEAR PRODUCT COMPANION REGISTER
+.MM6SNCONT ANOP
+         AEDR  F0,F2          PLACE RESULT IN ACC                       00003700
+         LA    R2,2(R2)       BUMP M1 PTR TO NEXT ELEMENT IN ROW        00003800
+         AR    R3,R5          BUMP M2 PTR TO NEXT ELEMENT IN COLUMN     00003900
+         BCTB  R6,LOOP1                                                 00004000
+         LR    R6,R4          GET # HALFWORDS / ROW OF M1               00004100
+         SRL   R6,1           GET BACK N                                00004200
+         STE   F0,2(R1)       STORE ACC                                 00004300
+         LA    R1,2(R1)       BUMP OUTPUT PTR TO MEXT ELEMENT           00004400
+         LFXR  R3,F5          GET BACK (ADDR(M2) || M)                  00004500
+         AHI   R3,2           BUMP M2 PTR TO NEXT COLUMN                00004600
+         SR    R2,R4          RESET M1 PTR TO BEGINNING OF ROW          00004700
+         BCTB  R7,LOOP2                                                 00004800
+         AR    R2,R4          BUMP M1 PTR TO NEXT ROW                   00004900
+         SR    R3,R5          SET M2 PTR TO BEGINNING OF M2             00005000
+         SRR   R3,16          PUT COLUMN PTR(M) IN UPPER HALF OF R3     00005100
+         BCTB  R3,LOOP3                                                 00005200
+         LFXR  R4,F4          GET BACK RETURN ADDRESS                   00005300
+         AEXIT                                                          00005400
+         ACLOSE                                                         00005500

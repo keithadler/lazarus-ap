@@ -17,8 +17,15 @@ VAGC = os.environ.get("VAGC", "~/"
     "virtualagc")
 ASM = f"{VAGC}/ASM101S"
 PY = os.environ.get("VENV_PY", f"{os.path.dirname(VAGC)}/venv/bin/python3")
-RUNASM = f"{VAGC}/yaShuttle/Source Code/PASS.REL32V0/RUNASM"
-OBJ = os.environ.get("CENSUS_DIR", "/tmp")   # census_<NAME>.obj lives here
+# The flight sources and their assembled objects are committed in this
+# repo (roms/nasa/RUNASM, roms/nasa/lib) so that resurrection does not
+# depend on a toolchain checkout that can be — and once was — deleted.
+# See docs/ROADMAP.md and DEFECTS.md LAZARUS-2.
+_here = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+RUNASM = os.environ.get("RUNASM_DIR", os.path.join(_here, "roms/nasa/RUNASM"))
+if not os.path.isdir(RUNASM):
+    RUNASM = f"{VAGC}/yaShuttle/Source Code/PASS.REL32V0/RUNASM"
+OBJ = os.environ.get("CENSUS_DIR", os.path.join(_here, "roms/nasa/lib"))
 OUT = "roms/nasa"
 
 EXPECT = {  # modern equivalents
@@ -35,6 +42,20 @@ ARRAY_FN = {  # array routines: pointer in R2, count in R5
     "EPROD": math.prod, "ESUM": sum, "EMAX": max, "EMIN": min,
     "DPROD": math.prod, "DSUM": sum, "DMAX": max, "DMIN": min,
     "HPROD": math.prod, "HSUM": sum, "IPROD": math.prod, "ISUM": sum,
+}
+
+# How each array routine's elements and result are shaped.  Read off the
+# routine's own AMAIN declarations in RUNASM, e.g.
+#     EPROD  INPUT R2, ARRAY(N) SCALAR SP  / OUTPUT F0 SCALAR SP
+#     DPROD  INPUT R2, ARRAY(N) SCALAR DP  / OUTPUT F0 SCALAR DP
+#     IPROD  INPUT R2, ARRAY(N) INTEGER DP / OUTPUT R5 INTEGER DP
+# The stride in each routine's own "LA R2,n(R2)" confirms the element
+# width: 2 halfwords for SP and INTEGER DP, 4 for SCALAR DP.
+ARRAY_KIND = {
+    "EPROD": "sp", "ESUM": "sp", "EMAX": "sp", "EMIN": "sp",
+    "HPROD": "sp", "HSUM": "sp",
+    "DPROD": "dp", "DSUM": "dp", "DMAX": "dp", "DMIN": "dp",
+    "IPROD": "int", "ISUM": "int",
 }
 
 
@@ -113,21 +134,45 @@ def resurrect(name, arg, arg2=None, array=None):
         # their loops pre-increment - so R2 must point one fullword
         # BEFORE the first element (verified against EPROD: the loop
         # reads 2(R2) then bumps R2 by a fullword).
-        elems = "".join(f"         DC    X'{ibm_hex(v):08X}'\n" for v in array)
+        kind = ARRAY_KIND.get(name, "sp")
+        if kind == "int":
+            # INTEGER DP elements are plain fullwords and the result comes
+            # back in R5, not F0.
+            elems = "".join(f"         DC    F'{int(v)}'\n" for v in array)
+            store, pad = "         ST    5,RESULT\n", "RESULT   DC    F'0'\n"
+            guard = "ARRM1    DC    F'0'\n"
+        elif kind == "dp":
+            # SCALAR DP elements are two fullwords each; ASM101S rejects
+            # two constants on one DC line, so each half gets its own.
+            elems = ""
+            for v in array:
+                hi, lo = ibm_hex_long(v)
+                elems += (f"         DC    X'{hi:08X}'\n"
+                          f"         DC    X'{lo:08X}'\n")
+            # STED, not STD: the flight code's store-double mnemonic
+            # (91 uses across RUNASM).  ASM101S also rejects a duplication
+            # factor here, so the result slot is two separate DC lines.
+            store = "         STED  0,RESULT\n"
+            pad = "RESULT   DC    F'0'\n         DC    F'0'\n"
+            guard = "ARRM1    DC    F'0'\n         DC    F'0'\n"
+        else:
+            elems = "".join(f"         DC    X'{ibm_hex(v):08X}'\n" for v in array)
+            store, pad = "         STE   0,RESULT\n", "RESULT   DC    F'0'\n"
+            guard = "ARRM1    DC    F'0'\n"
         src = (f"         EXTRN {name}\nDRIVER   CSECT\n"
                "         LA    0,STK\n         LA    2,ARRM1\n"
                f"         LFXI  5,{len(array)}\n"
                f"         BAL   4,{name}\n"
-               "         STE   0,RESULT\n         SVC   ENDC\n"
+               + store + "         SVC   ENDC\n"
                "ENDC     DC    H'21'\n"
-               "ARRM1    DC    F'0'\n" + elems +
-               "RESULT   DC    F'0'\nSTK      DS    40F\n"
+               + guard + elems + pad +
+               "STK      DS    40F\n"
                "         END   DRIVER\n")
         open(f"{ASM}/{name}_DRV.asm", "w").write(src)
         lst = subprocess.run([PY, "ASM101S.py", f"--object={name}_DRV.obj",
                               f"{name}_DRV.asm"], cwd=ASM,
                              capture_output=True, text=True)
-        return _finish(name, chain, False, result_at(lst.stdout))
+        return _finish(name, chain, kind == "dp", result_at(lst.stdout))
     dp = "SCALAR DP" in srctext.split("OUTPUT", 1)[-1][:60]
     # A second scalar argument travels in F2 (the routines' own INPUT
     # lines: "INPUT F0, ... / F2 ...").
@@ -234,9 +279,11 @@ def main():
                     f"| 0x{word} = {val:.7f} | {want:.7f} "
                     f"| {'OK' if ok else 'MISMATCH'} |")
         print(rows[-1])
-    open(f"{OUT}/lab.md", "w").write(
-        "| Routine | Calls | Input | Flight answer | Modern | Status |\n"
-        "|---|---|---|---|---|---|\n" + "\n".join(rows) + "\n")
+    # lab.md is owned by tools/labcheck.py, which re-runs every committed
+    # image from roms/nasa/lab.json.  Resurrecting a routine here is step
+    # one; add it to that manifest to have it checked on every build.
+    print(f"\n{len(rows) - bad}/{len(rows)} ok. "
+          f"Add new routines to roms/nasa/lab.json, then run tools/labcheck.py.")
     sys.exit(1 if bad else 0)
 
 
