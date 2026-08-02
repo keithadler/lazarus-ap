@@ -1,65 +1,92 @@
-<title>Lazarus AP · Execution Walkthrough</title>
+<title>Watching a Space Shuttle Computer Think</title>
 <style>
 :root{
-  --ground:#F2F0E9; --panel:#E9E6DC; --ink:#22261F; --dim:#6E7266;
-  --line:#CFCCC0; --accent:#2E7D46; --accent-ink:#FFFFFF;
-  --amber:#9A6516; --crt-bg:#1A211A; --crt-ink:#7FE09A;
+  --ground:#F4F2EA; --panel:#EBE8DD; --ink:#26291F; --dim:#71756A;
+  --line:#D2CFC2; --accent:#2E7D46; --accent-ink:#FFFFFF;
+  --amber:#9A6516; --crt-bg:#1A211A; --crt-ink:#7FE09A; --hero:#1E2A20;
 }
 @media (prefers-color-scheme: dark){:root{
-  --ground:#10140F; --panel:#181E17; --ink:#D8E2D4; --dim:#7E8A78;
+  --ground:#10140F; --panel:#181E17; --ink:#D8E2D4; --dim:#8A947F;
   --line:#2A332A; --accent:#5DD880; --accent-ink:#0B140D;
-  --amber:#E8A33D; --crt-bg:#0B110B; --crt-ink:#6FE28C;
+  --amber:#E8A33D; --crt-bg:#0B110B; --crt-ink:#6FE28C; --hero:#0D120D;
 }}
 :root[data-theme="dark"]{
-  --ground:#10140F; --panel:#181E17; --ink:#D8E2D4; --dim:#7E8A78;
+  --ground:#10140F; --panel:#181E17; --ink:#D8E2D4; --dim:#8A947F;
   --line:#2A332A; --accent:#5DD880; --accent-ink:#0B140D;
-  --amber:#E8A33D; --crt-bg:#0B110B; --crt-ink:#6FE28C;
+  --amber:#E8A33D; --crt-bg:#0B110B; --crt-ink:#6FE28C; --hero:#0D120D;
 }
 :root[data-theme="light"]{
-  --ground:#F2F0E9; --panel:#E9E6DC; --ink:#22261F; --dim:#6E7266;
-  --line:#CFCCC0; --accent:#2E7D46; --accent-ink:#FFFFFF;
-  --amber:#9A6516; --crt-bg:#1A211A; --crt-ink:#7FE09A;
+  --ground:#F4F2EA; --panel:#EBE8DD; --ink:#26291F; --dim:#71756A;
+  --line:#D2CFC2; --accent:#2E7D46; --accent-ink:#FFFFFF;
+  --amber:#9A6516; --crt-bg:#1A211A; --crt-ink:#7FE09A; --hero:#1E2A20;
 }
 *{box-sizing:border-box}
-body{background:var(--ground);color:var(--ink);
-  font:14px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-  font-variant-numeric:tabular-nums;margin:0;padding:20px}
-.placard{font:600 10.5px/1 system-ui,sans-serif;letter-spacing:.14em;
+body{background:var(--ground);color:var(--ink);margin:0;
+  font:16px/1.65 Georgia,'Times New Roman',serif}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-variant-numeric:tabular-nums}
+.wrap{max-width:980px;margin:0 auto;padding:0 20px 60px}
+.placard{font:600 10.5px/1.4 system-ui,sans-serif;letter-spacing:.14em;
   text-transform:uppercase;color:var(--dim);margin:0 0 8px}
-header{display:flex;flex-wrap:wrap;align-items:baseline;gap:14px;margin-bottom:14px}
-header h1{font-size:17px;margin:0;font-weight:700}
-header .sub{color:var(--dim);font-size:12.5px}
-.badge{background:var(--accent);color:var(--accent-ink);border-radius:3px;
-  padding:2px 8px;font:600 11px/1.5 system-ui,sans-serif;letter-spacing:.06em}
+/* hero */
+.hero{background:var(--hero);color:#E6EFE2;padding:56px 20px 48px;margin-bottom:34px}
+.hero-in{max-width:980px;margin:0 auto}
+.hero h1{font-size:clamp(28px,5vw,44px);line-height:1.12;margin:.2em 0 .4em;
+  font-weight:400;text-wrap:balance}
+.hero p{max-width:62ch;font-size:17.5px;color:#C2CEBB;margin:.4em 0}
+.hero .placard{color:#8FA087}
+.hero button{margin-top:18px;background:var(--accent);color:var(--accent-ink);
+  border:none;border-radius:5px;font:700 15px/1 system-ui,sans-serif;
+  padding:13px 26px;cursor:pointer;letter-spacing:.03em}
+.hero button:hover{filter:brightness(1.08)}
+/* history cards */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));
+  gap:14px;margin-bottom:40px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:18px 20px}
+.card h3{font-size:16.5px;margin:0 0 8px}
+.card p{font-size:14.5px;margin:0;color:var(--ink)}
+.card p b{color:var(--accent)}
+/* narrator */
+.narr{background:var(--panel);border-left:4px solid var(--accent);
+  border-radius:0 6px 6px 0;padding:16px 20px;margin:0 0 14px}
+.narr .ch{font:700 12px/1 system-ui,sans-serif;letter-spacing:.12em;
+  text-transform:uppercase;color:var(--accent);margin:0 0 6px}
+.narr p{margin:0;font-size:16px;max-width:72ch}
+.now{font-size:14px;color:var(--dim);margin:10px 2px 0;font-style:italic}
+.now b{color:var(--amber);font-style:normal}
+/* console */
 .controls{display:flex;flex-wrap:wrap;align-items:center;gap:10px;
   background:var(--panel);border:1px solid var(--line);border-radius:6px;
   padding:10px 14px;margin-bottom:14px}
-button{background:var(--ground);color:var(--ink);border:1px solid var(--line);
-  border-radius:4px;font:inherit;padding:4px 12px;cursor:pointer}
-button:hover{border-color:var(--accent)}
+button{font:inherit}
+.controls button{background:var(--ground);color:var(--ink);border:1px solid var(--line);
+  border-radius:4px;padding:5px 12px;cursor:pointer;
+  font:600 13px/1.4 system-ui,sans-serif}
+.controls button:hover{border-color:var(--accent)}
 button:focus-visible{outline:2px solid var(--accent);outline-offset:1px}
-button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
-input[type=range]{flex:1;min-width:160px;accent-color:var(--accent)}
+.controls button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+input[type=range]{flex:1;min-width:150px;accent-color:var(--accent)}
 select{background:var(--ground);color:var(--ink);border:1px solid var(--line);
-  border-radius:4px;font:inherit;padding:3px 6px}
-.stepnum{min-width:120px;text-align:right;color:var(--dim)}
-.grid{display:grid;grid-template-columns:minmax(300px,1.2fr) minmax(280px,1fr);gap:14px}
+  border-radius:4px;font:inherit;font-size:13px;padding:3px 6px}
+.stepnum{min-width:110px;text-align:right;color:var(--dim);font-size:13px}
+.grid{display:grid;grid-template-columns:minmax(300px,1.15fr) minmax(280px,1fr);gap:14px}
 @media(max-width:760px){.grid{grid-template-columns:1fr}}
 .panel{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px 14px}
+.hint{font-size:12.5px;color:var(--dim);margin:8px 0 0;max-width:60ch}
 .tape{list-style:none;margin:0;padding:0;overflow-x:auto}
 .tape li{display:flex;gap:14px;padding:2.5px 8px;border-radius:3px;white-space:nowrap}
 .tape .a{color:var(--dim);width:6ch}
-.tape .h{color:var(--dim);width:5ch}
-.tape .m{font-weight:700}
+.tape .m{font-weight:700;width:6ch}
+.tape .e{color:var(--dim)}
 .tape li.cur{background:var(--accent);color:var(--accent-ink)}
-.tape li.cur .a,.tape li.cur .h{color:var(--accent-ink);opacity:.75}
-.rt{width:100%;border-collapse:collapse}
+.tape li.cur .a,.tape li.cur .e{color:var(--accent-ink);opacity:.8}
+.rt{width:100%;border-collapse:collapse;font-size:14px}
 .rt td{padding:3px 8px;border-bottom:1px solid var(--line)}
 .rt tr:last-child td{border-bottom:none}
 .rt .rn{color:var(--dim);width:4ch}
 .rt .chg{color:var(--amber);font-weight:700}
 .crt{background:var(--crt-bg);color:var(--crt-ink);border-radius:4px;
-  padding:12px 14px;min-height:120px;white-space:pre;overflow-x:auto;
+  padding:12px 14px;min-height:130px;white-space:pre;overflow-x:auto;
   font-size:13px;line-height:1.55}
 .crt .caret{opacity:.8;animation:blink 1s steps(1) infinite}
 @keyframes blink{50%{opacity:0}}
@@ -67,60 +94,203 @@ select{background:var(--ground);color:var(--ink);border:1px solid var(--line);
 .meta{display:flex;gap:18px;flex-wrap:wrap;color:var(--dim);font-size:12.5px;margin-top:10px}
 .meta b{color:var(--ink)}
 .right{display:flex;flex-direction:column;gap:14px}
+.chapters{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 14px}
+.chapters button{background:var(--ground);border:1px solid var(--line);
+  border-radius:99px;padding:5px 14px;cursor:pointer;font:600 12.5px/1.4 system-ui,sans-serif;color:var(--ink)}
+.chapters button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.tail{max-width:70ch;margin-top:44px;font-size:15.5px}
+.tail h2{font-size:20px}
+h2.sect{font-size:22px;font-weight:400;margin:0 0 14px}
 </style>
-<header>
-  <h1>LAZARUS · AP-101S walkthrough</h1>
-  <span class="badge">REAL FLIGHT-COMPILER CODE</span>
-  <span class="sub">LAZARUS.hal &rarr; HAL/S-FC rel. 32V0 &rarr; lnk_lite &rarr; Lazarus AP &mdash; all 401 executed instructions</span>
-</header>
-<div class="controls">
-  <button id="b0" title="rewind">|&#8678;</button>
-  <button id="bm" title="step back">&#8678;</button>
-  <button id="play" class="primary">Run</button>
-  <button id="bp" title="step">&#8680;</button>
-  <button id="bend" title="end">&#8680;|</button>
-  <input type="range" id="scrub" min="0" value="0">
-  <select id="speed">
-    <option value="260">Slow</option><option value="90" selected>Real-ish</option><option value="18">Fast</option>
-  </select>
-  <span class="stepnum" id="stepnum"></span>
-</div>
-<div class="grid">
-  <section class="panel">
-    <p class="placard">Instruction tape &mdash; 19-bit address · opcode halfword · mnemonic</p>
-    <ol class="tape" id="tape"></ol>
-  </section>
-  <div class="right">
+<div class="hero"><div class="hero-in">
+  <p class="placard">Lazarus AP &middot; a resurrection in software</p>
+  <h1>You are watching a Space Shuttle computer think.</h1>
+  <p>Every Shuttle flew with five IBM AP-101 computers — machines slower than a
+  musical greeting card — that steered two thousand tons of spacecraft by voting
+  among themselves. Their programs were written in <b style="color:#9FD9A8">HAL/S</b>,
+  a language invented for spaceflight and used almost nowhere else.</p>
+  <p>Below, one small program runs on an emulated AP-101S, one instruction at a
+  time. The program was written this week — but the compiler that turned it into
+  machine code is the <i>real Shuttle compiler</i>, recovered and brought back to
+  life. Nothing here is a mock-up: every number you'll see is the machine actually
+  working.</p>
+  <button id="cta">&#9654;&nbsp; Watch the run</button>
+</div></div>
+<div class="wrap">
+  <div class="cards">
+    <div class="card"><h3>The machine</h3>
+      <p>The AP-101S had about <b>1&nbsp;MB of memory</b> and no screen of its own.
+      Five of them ran in lockstep on each orbiter; if one disagreed, the others
+      voted it out mid-flight. This emulator was built from IBM&rsquo;s original
+      1,300-page manual, one cited page at a time.</p></div>
+    <div class="card"><h3>The language</h3>
+      <p><b>HAL/S</b> looks a little like Fortran with wings. The source of the
+      program below is nine lines: print a greeting, loop three times printing a
+      vote, print a sign-off. The Shuttle&rsquo;s real flight software was about
+      <b>400,000 lines</b> of it.</p></div>
+    <div class="card"><h3>The resurrection</h3>
+      <p>The Shuttle&rsquo;s compiler survived as punch-card-era source code,
+      restored by the Virtual&nbsp;AGC project. We rebuilt it, compiled a brand-new
+      program with it, and linked it with a tool written for this project. What
+      you&rsquo;re watching is the result: <b>401 instructions</b>, the complete run.</p></div>
+  </div>
+
+  <h2 class="sect" id="console">The run, narrated</h2>
+  <div class="chapters" id="chapters"></div>
+  <div class="narr"><p class="ch" id="narr-ch"></p><p id="narr-p"></p>
+    <p class="now">Right now: <b id="now"></b></p></div>
+
+  <div class="controls">
+    <button id="b0" title="rewind">|&#8678;</button>
+    <button id="bm" title="one step back">&#8678;</button>
+    <button id="play" class="primary">Run</button>
+    <button id="bp" title="one step forward">&#8680;</button>
+    <button id="bend" title="jump to end">&#8680;|</button>
+    <input type="range" id="scrub" min="0" value="0" aria-label="timeline">
+    <select id="speed" aria-label="playback speed">
+      <option value="260">Slow</option><option value="90" selected>Cruise</option><option value="18">Fast</option>
+    </select>
+    <span class="stepnum mono" id="stepnum"></span>
+  </div>
+  <div class="grid">
     <section class="panel">
-      <p class="placard">General registers &mdash; set 0</p>
-      <table class="rt" id="regs"></table>
-      <div class="meta"><span>CC <b id="cc"></b></span><span>IC <b id="ic"></b></span><span>SECTOR <b id="sec"></b></span></div>
+      <p class="placard">Instruction tape &mdash; the program, one step at a time</p>
+      <ol class="tape mono" id="tape"></ol>
+      <p class="hint">Each line is one machine instruction: its address in memory,
+      its name, and what it does. The green line is the one executing now.</p>
     </section>
-    <section class="panel">
-      <p class="placard">Channel 6 output &mdash; as the program writes it</p>
-      <div class="crt" id="crt"></div>
-    </section>
+    <div class="right">
+      <section class="panel">
+        <p class="placard">Registers &mdash; the computer&rsquo;s short-term memory</p>
+        <table class="rt mono" id="regs"></table>
+        <div class="meta mono"><span>CC <b id="cc"></b></span><span>ADDR <b id="ic"></b></span></div>
+        <p class="hint">Eight slots the CPU thinks with. A value that just changed
+        turns <span style="color:var(--amber);font-weight:700">amber</span> — watch
+        R6 count the loop.</p>
+      </section>
+      <section class="panel">
+        <p class="placard">Mission console &mdash; what the program prints</p>
+        <div class="crt mono" id="crt"></div>
+        <p class="hint">Text appears here at the exact instruction the program
+        wrote it — the same characters, columns and all, that the real toolchain
+        produces.</p>
+      </section>
+    </div>
+  </div>
+
+  <h2 class="sect">The machine vs. the phone in your pocket</h2>
+  <div class="panel" style="margin-bottom:40px;overflow-x:auto">
+    <table class="rt mono" style="min-width:560px">
+      <tr><td class="rn" style="width:auto"></td>
+          <td style="font-weight:700">AP-101S (Shuttle, 1980s)</td>
+          <td style="font-weight:700">A recent iPhone</td></tr>
+      <tr><td class="rn">Speed</td><td>~1 million instructions/sec</td><td>tens of billions/sec &mdash; roughly a million&times; faster</td></tr>
+      <tr><td class="rn">Memory</td><td>1 MB &mdash; every byte accounted for</td><td>8&nbsp;GB &mdash; ~8,000&times; more</td></tr>
+      <tr><td class="rn">Weight</td><td>~25 kg per computer, five aboard</td><td>~170 g</td></tr>
+      <tr><td class="rn">Power</td><td>~550 W of spacecraft electricity</td><td>sips from a pocket battery</td></tr>
+      <tr><td class="rn">Display</td><td>none &mdash; green text on borrowed CRTs</td><td>millions of pixels</td></tr>
+      <tr><td class="rn">Job</td><td>fly a 2,000-ton spacecraft, never crash</td><td>almost everything, may crash</td></tr>
+    </table>
+    <p class="hint">The asymmetry is the point: the Shuttle&rsquo;s computers were
+    a thousand times weaker than a musical greeting card is today &mdash; and
+    carried 400,000 lines of flight software with a defect rate modern teams
+    still study. Slowness was survivable. Wrongness was not.</p>
+  </div>
+
+  <h2 class="sect">Three stories about this technology</h2>
+  <div class="cards" style="margin-bottom:40px">
+    <div class="card"><h3>The scrub heard round the world</h3>
+      <p>April 10, 1981: the very first Shuttle launch stopped at T&minus;20
+      minutes because the fifth, backup computer refused to listen to the other
+      four. A subtle timing skew &mdash; about a 1-in-67 chance on any given
+      power-up &mdash; had shifted the primaries&rsquo; clock by 40 milliseconds.
+      Young and Crippen climbed out; the world&rsquo;s most scrutinized software
+      bug got fixed; STS-1 flew two days later. Timing between cooperating
+      computers is exactly what our clock-skew tests probe.</p></div>
+    <div class="card"><h3>The vote</h3>
+      <p>Four primary computers ran in lockstep, comparing answers hundreds of
+      times a second; force-summing hydraulics let the majority physically
+      overpower a wrong actuator command. A sick machine shows a signature you
+      can see in this project&rsquo;s own five-GPC demo: the healthy majority each
+      point at the failure &mdash; and the failed one votes against the world.</p></div>
+    <div class="card"><h3>Software by the pound</h3>
+      <p>The original AP-101B remembered with woven magnetic cores &mdash; memory
+      you could hold, bits you could point at. Too small to hold all of a
+      mission&rsquo;s software at once, so crews reloaded programs from tape
+      between flight phases. The 1990s AP-101S upgrade (the machine emulated
+      here) swapped cores for chips and doubled memory &mdash; to one megabyte,
+      roughly a two-second MP3.</p></div>
+  </div>
+  <div class="tail">
+    <h2>What you just watched</h2>
+    <p>A program conceived in 2026, compiled by software written for the Space
+    Shuttle in the 1970s, executed faithfully by an emulator reconstructed from
+    the flight computer&rsquo;s manual — every WRITE crossing the same runtime
+    machinery astronauts&rsquo; displays depended on. Four hundred and one
+    instructions to say hello, count to three, and hand back control. The Shuttle
+    did the same thing, three hundred thousand times a second, all the way to
+    orbit.</p>
   </div>
 </div>
 <script>
 const T = {"program":"LAZARUS.fcm","result":"Done","traced":401,"steps":[[65892,"BAL",58611,["00000000","00000000","00000000","00000000","00000000","00000000","00000000","00000000"],0,0],[65536,"LA",59635,["00000000","00000000","00000000","00000000","81660020","00000000","00000000","00000000"],0,0],[65538,"LA",59891,["02120000","00000000","00000000","00000000","81660020","00000000","00000000","00000000"],0,0],[65540,"STH",47380,["02120000","014E0000","00000000","00000000","81660020","00000000","00000000","00000000"],0,0],[65541,"IAL",57595,["02120000","014E0000","00000000","00000000","81660020","00000000","00000000","00000000"],0,0],[65543,"LA",60177,["02120014","014E0000","00000000","00000000","81660020","00000000","00000000","00000000"],0,0],[65544,"STH",47908,["02120014","014E0000","00000000","01520000","81660020","00000000","00000000","00000000"],0,0],[65545,"LFXI",48872,["02120014","014E0000","00000000","01520000","81660020","00000000","00000000","00000000"],0,0],[65546,"LFXI",48613,["02120014","014E0000","00000000","01520000","81660020","00000000","00060000","00000000"],0,0],[65547,"SCAL",53503,["02120014","014E0000","00000000","01520000","81660020","00030000","00060000","00000000"],0,0],[65806,"NIST",46628,["02260012","014E0000","00000000","01520000","81660020","00030000","00060000","00000000"],0,0],[65808,"STH",48883,["02260012","014E0000","00000000","01520000","81660020","00030000","00060000","00000000"],0,0],[65810,"STH",48627,["02260012","014E0000","00000000","01520000","81660020","00030000","00060000","00000000"],0,0],[65812,"BAL",58615,["02260012","014E0000","00000000","01520000","81660020","00030000","00060000","00000000"],0,0],[65870,"BCR",51172,["02260012","014E0000","00000000","01520000","81160020","00030000","00060000","00000000"],0,0],[65814,"SRET",38888,["02260012","014E0000","00000000","01520000","81160020","00030000","00060000","00000000"],0,0],[65549,"LA",59981,["02120014","014E0000","00000000","01520000","81660020","00030000","00060000","00000000"],0,0],[65550,"SCAL",53503,["02120014","014E0000","01610000","01520000","81660020","00030000","00060000","00000000"],0,0],[65793,"NIST",46628,["02260012","014E0000","01610000","01520000","81660020","00030000","00060000","00000000"],0,0],[65795,"LA",59891,["02260012","014E0000","01610000","01520000","81660020","00030000","00060000","00000000"],0,0],[65797,"BAL",58615,["02260012","01900000","01610000","01520000","81660020","00030000","00060000","00000000"],0,0],[65682,"SHW",41473,["02260012","01900000","01610000","01520000","81070020","00030000","00060000","00000000"],0,0],[65683,"LH",39682,["02260012","01900000","01610000","01520000","81070020","00030000","00060000","00000000"],0,0],[65684,"NHI",46819,["02260012","01900000","01610000","00100000","81070020","00030000","00060000","00000000"],1,0],[65686,"LH",40193,["02260012","01900000","01610000","00100000","81070020","00030000","00060000","00000000"],3,0],[65687,"SRL",62754,["02260012","01900000","01610000","00100000","81070020","FFFF0000","00060000","00000000"],3,0],[65688,"NHI",46821,["02260012","01900000","01610000","00100000","81070020","00FFFF00","00060000","00000000"],3,0],[65690,"CR",5093,["02260012","01900000","01610000","00100000","81070020","00FF0000","00060000","00000000"],3,0],[65691,"BCF",56836,["02260012","01900000","01610000","00100000","81070020","00FF0000","00060000","00000000"],3,0],[65693,"SLL",62752,["02260012","01900000","01610000","00100000","81070020","00FF0000","00060000","00000000"],3,0],[65694,"OR",11747,["02260012","01900000","01610000","00100000","81070020","FF000000","00060000","00000000"],3,0],[65695,"STH",48385,["02260012","01900000","01610000","00100000","81070020","FF100000","00060000","00000000"],3,0],[65696,"LA",60167,["02260012","01900000","01610000","00100000","81070020","FF100000","00060000","00000000"],3,0],[65697,"CHI",46563,["02260012","01900000","01610000","00110000","81070020","FF100000","00060000","00000000"],3,0],[65699,"BCF",56344,["02260012","01900000","01610000","00110000","81070020","FF100000","00060000","00000000"],1,0],[65700,"SRL",62214,["02260012","01900000","01610000","00110000","81070020","FF100000","00060000","00000000"],1,0],[65701,"LH",40198,["02260012","01900000","01610000","00088000","81070020","FF100000","00060000","00000000"],1,0],[65702,"STH",48389,["02260012","01900000","01610000","00088000","81070020","4C410000","00060000","00000000"],1,0],[65703,"LA",59653,["02260012","01900000","01610000","00088000","81070020","4C410000","00060000","00000000"],1,0],[65704,"LA",59910,["02260012","01910000","01610000","00088000","81070020","4C410000","00060000","00000000"],1,0],[65705,"BCTB",56087,["02260012","01910000","01620000","00088000","81070020","4C410000","00060000","00000000"],1,0],[65701,"LH",40198,["02260012","01910000","01620000","00078000","81070020","4C410000","00060000","00000000"],1,0],[65702,"STH",48389,["02260012","01910000","01620000","00078000","81070020","5A410000","00060000","00000000"],1,0],[65703,"LA",59653,["02260012","01910000","01620000","00078000","81070020","5A410000","00060000","00000000"],1,0],[65704,"LA",59910,["02260012","01920000","01620000","00078000","81070020","5A410000","00060000","00000000"],1,0],[65705,"BCTB",56087,["02260012","01920000","01630000","00078000","81070020","5A410000","00060000","00000000"],1,0],[65701,"LH",40198,["02260012","01920000","01630000","00068000","81070020","5A410000","00060000","00000000"],1,0],[65702,"STH",48389,["02260012","01920000","01630000","00068000","81070020","52550000","00060000","00000000"],1,0],[65703,"LA",59653,["02260012","01920000","01630000","00068000","81070020","52550000","00060000","00000000"],1,0],[65704,"LA",59910,["02260012","01930000","01630000","00068000","81070020","52550000","00060000","00000000"],1,0],[65705,"BCTB",56087,["02260012","01930000","01640000","00068000","81070020","52550000","00060000","00000000"],1,0],[65701,"LH",40198,["02260012","01930000","01640000","00058000","81070020","52550000","00060000","00000000"],1,0],[65702,"STH",48389,["02260012","01930000","01640000","00058000","81070020","53200000","00060000","00000000"],1,0],[65703,"LA",59653,["02260012","01930000","01640000","00058000","81070020","53200000","00060000","00000000"],1,0],[65704,"LA",59910,["02260012","01940000","01640000","00058000","81070020","53200000","00060000","00000000"],1,0],[65705,"BCTB",56087,["02260012","01940000","01650000","00058000","81070020","53200000","00060000","00000000"],1,0],[65701,"LH",40198,["02260012","01940000","01650000","00048000","81070020","53200000","00060000","00000000"],1,0],[65702,"STH",48389,["02260012","01940000","01650000","00048000","81070020","41500000","00060000","00000000"],1,0],[65703,"LA",59653,["02260012","01940000","01650000","00048000","81070020","41500000","00060000","00000000"],1,0],[65704,"LA",59910,["02260012","01950000","01650000","00048000","81070020","41500000","00060000","00000000"],1,0],[65705,"BCTB",56087,["02260012","01950000","01660000","00048000","81070020","41500000","00060000","00000000"],1,0],[65701,"LH",40198,["02260012","01950000","01660000","00038000","81070020","41500000","00060000","00000000"],1,0],[65702,"STH",48389,["02260012","01950000","01660000","00038000","81070020","204C0000","00060000","00000000"],1,0],[65703,"LA",59653,["02260012","01950000","01660000","00038000","81070020","204C0000","00060000","00000000"],1,0],[65704,"LA",59910,["02260012","01960000","01660000","00038000","81070020","204C0000","00060000","00000000"],1,0],[65705,"BCTB",56087,["02260012","01960000","01670000","00038000","81070020","204C0000","00060000","00000000"],1,0],[65701,"LH",40198,["02260012","01960000","01670000","00028000","81070020","204C0000","00060000","00000000"],1,0],[65702,"STH",48389,["02260012","01960000","01670000","00028000","81070020","49560000","00060000","00000000"],1,0],[65703,"LA",59653,["02260012","01960000","01670000","00028000","81070020","49560000","00060000","00000000"],1,0],[65704,"LA",59910,["02260012","01970000","01670000","00028000","81070020","49560000","00060000","00000000"],1,0],[65705,"BCTB",56087,["02260012","01970000","01680000","00028000","81070020","49560000","00060000","00000000"],1,0],[65701,"LH",40198,["02260012","01970000","01680000","00018000","81070020","49560000","00060000","00000000"],1,0],[65702,"STH",48389,["02260012","01970000","01680000","00018000","81070020","45530000","00060000","00000000"],1,0],[65703,"LA",59653,["02260012","01970000","01680000","00018000","81070020","45530000","00060000","00000000"],1,0],[65704,"LA",59910,["02260012","01980000","01680000","00018000","81070020","45530000","00060000","00000000"],1,0],[65705,"BCTB",56087,["02260012","01980000","01690000","00018000","81070020","45530000","00060000","00000000"],1,0],[65706,"LH",39716,["02260012","01980000","01690000","00008000","81070020","45530000","00060000","00000000"],1,0],[65707,"LH",39188,["02260012","01980000","01690000","00000000","81070020","45530000","00060000","00000000"],0,0],[65708,"BCRE",51180,["02260012","00000000","01690000","00000000","81070020","45530000","00060000","00000000"],0,0],[65799,"LA",61171,["02260012","00000000","01690000","00000000","81070020","45530000","00060000","00000000"],0,0],[65801,"STH",48883,["02260012","00000000","01690000","00000000","81070020","45530000","000D0000","00000000"],0,0],[65803,"SCAL",53503,["02260012","00000000","01690000","00000000","81070020","45530000","000D0000","00000000"],0,0],[65825,"NIST",46628,["02380012","00000000","01690000","00000000","81070020","45530000","000D0000","00000000"],0,0],[65827,"BCB",57110,["02380012","00000000","01690000","00000000","81070020","45530000","000D0000","00000000"],0,0],[65823,"BCR",49376,["02380012","00000000","01690000","00000000","81070020","45530000","000D0000","00000000"],0,0],[65824,"SRET",38888,["02380012","00000000","01690000","00000000","81070020","45530000","000D0000","00000000"],0,0],[65805,"SRET",38888,["02260012","00000000","01690000","00000000","81070020","45530000","000D0000","00000000"],0,0],[65552,"LFXI",49123,["02120014","014E0000","01610000","01520000","81660020","00030000","00060000","00000000"],0,0],[65553,"BCF",57148,["02120014","014E0000","01610000","01520000","81660020","00030000","00060000","00010000"],0,0],[65569,"STH",48907,["02120014","014E0000","01610000","01520000","81660020","00030000","00060000","00010000"],0,0],[65570,"CHI",46567,["02120014","014E0000","01610000","01520000","81660020","00030000","00060000","00010000"],0,0],[65572,"BCB",56910,["02120014","014E0000","01610000","01520000","81660020","00030000","00060000","00010000"],3,0],[65554,"LFXI",48872,["02120014","014E0000","01610000","01520000","81660020","00030000","00060000","00010000"],3,0],[65555,"LFXI",48613,["02120014","014E0000","01610000","01520000","81660020","00030000","00060000","00010000"],3,0],[65556,"SCAL",53503,["02120014","014E0000","01610000","01520000","81660020","00030000","00060000","00010000"],3,0],[65806,"NIST",46628,["02260012","014E0000","01610000","01520000","81660020","00030000","00060000","00010000"],3,0],[65808,"STH",48883,["02260012","014E0000","01610000","01520000","81660020","00030000","00060000","00010000"],0,0],[65810,"STH",48627,["02260012","014E0000","01610000","01520000","81660020","00030000","00060000","00010000"],0,0],[65812,"BAL",58615,["02260012","014E0000","01610000","01520000","81660020","00030000","00060000","00010000"],0,0],[65870,"BCR",51172,["02260012","014E0000","01610000","01520000","81160020","00030000","00060000","00010000"],0,0],[65814,"SRET",38888,["02260012","014E0000","01610000","01520000","81160020","00030000","00060000","00010000"],0,0],[65558,"LR",7655,["02120014","014E0000","01610000","01520000","81660020","00030000","00060000","00010000"],3,0],[65559,"SCAL",53503,["02120014","014E0000","01610000","01520000","81660020","00010000","00060000","00010000"],1,0],[65815,"NIST",46628,["02260012","014E0000","01610000","01520000","81660020","00010000","00060000","00010000"],1,0],[65817,"STH",48627,["02260012","014E0000","01610000","01520000","81660020","00010000","00060000","00010000"],0,0],[65819,"LA",61171,["02260012","014E0000","01610000","01520000","81660020","00010000","00060000","00010000"],0,0],[65821,"STH",48883,["02260012","014E0000","01610000","01520000","81660020","00010000","000A0000","00010000"],0,0],[65823,"BCR",49376,["02260012","014E0000","01610000","01520000","81660020","00010000","000A0000","00010000"],0,0],[65824,"SRET",38888,["02260012","014E0000","01610000","01520000","81660020","00010000","000A0000","00010000"],0,17],[65561,"LA",59961,["02120014","014E0000","01610000","01520000","81660020","00010000","00060000","00010000"],1,17],[65562,"SCAL",53503,["02120014","014E0000","015C0000","01520000","81660020","00010000","00060000","00010000"],1,17],[65793,"NIST",46628,["02260012","014E0000","015C0000","01520000","81660020","00010000","00060000","00010000"],1,17],[65795,"LA",59891,["02260012","014E0000","015C0000","01520000","81660020","00010000","00060000","00010000"],0,17],[65797,"BAL",58615,["02260012","01900000","015C0000","01520000","81660020","00010000","00060000","00010000"],0,17],[65682,"SHW",41473,["02260012","01900000","015C0000","01520000","81070020","00010000","00060000","00010000"],0,17],[65683,"LH",39682,["02260012","01900000","015C0000","01520000","81070020","00010000","00060000","00010000"],0,17],[65684,"NHI",46819,["02260012","01900000","015C0000","00080000","81070020","00010000","00060000","00010000"],1,17],[65686,"LH",40193,["02260012","01900000","015C0000","00080000","81070020","00010000","00060000","00010000"],3,17],[65687,"SRL",62754,["02260012","01900000","015C0000","00080000","81070020","FFFF0000","00060000","00010000"],3,17],[65688,"NHI",46821,["02260012","01900000","015C0000","00080000","81070020","00FFFF00","00060000","00010000"],3,17],[65690,"CR",5093,["02260012","01900000","015C0000","00080000","81070020","00FF0000","00060000","00010000"],3,17],[65691,"BCF",56836,["02260012","01900000","015C0000","00080000","81070020","00FF0000","00060000","00010000"],3,17],[65693,"SLL",62752,["02260012","01900000","015C0000","00080000","81070020","00FF0000","00060000","00010000"],3,17],[65694,"OR",11747,["02260012","01900000","015C0000","00080000","81070020","FF000000","00060000","00010000"],3,17],[65695,"STH",48385,["02260012","01900000","015C0000","00080000","81070020","FF080000","00060000","00010000"],3,17],[65696,"LA",60167,["02260012","01900000","015C0000","00080000","81070020","FF080000","00060000","00010000"],3,17],[65697,"CHI",46563,["02260012","01900000","015C0000","00090000","81070020","FF080000","00060000","00010000"],3,17],[65699,"BCF",56344,["02260012","01900000","015C0000","00090000","81070020","FF080000","00060000","00010000"],1,17],[65700,"SRL",62214,["02260012","01900000","015C0000","00090000","81070020","FF080000","00060000","00010000"],1,17],[65701,"LH",40198,["02260012","01900000","015C0000","00048000","81070020","FF080000","00060000","00010000"],1,17],[65702,"STH",48389,["02260012","01900000","015C0000","00048000","81070020","47500000","00060000","00010000"],1,17],[65703,"LA",59653,["02260012","01900000","015C0000","00048000","81070020","47500000","00060000","00010000"],1,17],[65704,"LA",59910,["02260012","01910000","015C0000","00048000","81070020","47500000","00060000","00010000"],1,17],[65705,"BCTB",56087,["02260012","01910000","015D0000","00048000","81070020","47500000","00060000","00010000"],1,17],[65701,"LH",40198,["02260012","01910000","015D0000","00038000","81070020","47500000","00060000","00010000"],1,17],[65702,"STH",48389,["02260012","01910000","015D0000","00038000","81070020","43200000","00060000","00010000"],1,17],[65703,"LA",59653,["02260012","01910000","015D0000","00038000","81070020","43200000","00060000","00010000"],1,17],[65704,"LA",59910,["02260012","01920000","015D0000","00038000","81070020","43200000","00060000","00010000"],1,17],[65705,"BCTB",56087,["02260012","01920000","015E0000","00038000","81070020","43200000","00060000","00010000"],1,17],[65701,"LH",40198,["02260012","01920000","015E0000","00028000","81070020","43200000","00060000","00010000"],1,17],[65702,"STH",48389,["02260012","01920000","015E0000","00028000","81070020","564F0000","00060000","00010000"],1,17],[65703,"LA",59653,["02260012","01920000","015E0000","00028000","81070020","564F0000","00060000","00010000"],1,17],[65704,"LA",59910,["02260012","01930000","015E0000","00028000","81070020","564F0000","00060000","00010000"],1,17],[65705,"BCTB",56087,["02260012","01930000","015F0000","00028000","81070020","564F0000","00060000","00010000"],1,17],[65701,"LH",40198,["02260012","01930000","015F0000","00018000","81070020","564F0000","00060000","00010000"],1,17],[65702,"STH",48389,["02260012","01930000","015F0000","00018000","81070020","54450000","00060000","00010000"],1,17],[65703,"LA",59653,["02260012","01930000","015F0000","00018000","81070020","54450000","00060000","00010000"],1,17],[65704,"LA",59910,["02260012","01940000","015F0000","00018000","81070020","54450000","00060000","00010000"],1,17],[65705,"BCTB",56087,["02260012","01940000","01600000","00018000","81070020","54450000","00060000","00010000"],1,17],[65706,"LH",39716,["02260012","01940000","01600000","00008000","81070020","54450000","00060000","00010000"],1,17],[65707,"LH",39188,["02260012","01940000","01600000","00000000","81070020","54450000","00060000","00010000"],0,17],[65708,"BCRE",51180,["02260012","00000000","01600000","00000000","81070020","54450000","00060000","00010000"],0,17],[65799,"LA",61171,["02260012","00000000","01600000","00000000","81070020","54450000","00060000","00010000"],0,17],[65801,"STH",48883,["02260012","00000000","01600000","00000000","81070020","54450000","000D0000","00010000"],0,17],[65803,"SCAL",53503,["02260012","00000000","01600000","00000000","81070020","54450000","000D0000","00010000"],0,17],[65825,"NIST",46628,["02380012","00000000","01600000","00000000","81070020","54450000","000D0000","00010000"],0,17],[65827,"BCB",57110,["02380012","00000000","01600000","00000000","81070020","54450000","000D0000","00010000"],0,17],[65823,"BCR",49376,["02380012","00000000","01600000","00000000","81070020","54450000","000D0000","00010000"],0,17],[65824,"SRET",38888,["02380012","00000000","01600000","00000000","81070020","54450000","000D0000","00010000"],0,17],[65805,"SRET",38888,["02260012","00000000","01600000","00000000","81070020","54450000","000D0000","00010000"],0,17],[65564,"LH",40207,["02120014","014E0000","015C0000","01520000","81660020","00010000","00060000","00010000"],1,17],[65565,"SCAL",53503,["02120014","014E0000","015C0000","01520000","81660020","002A0000","00060000","00010000"],1,17],[65815,"NIST",46628,["02260012","014E0000","015C0000","01520000","81660020","002A0000","00060000","00010000"],1,17],[65817,"STH",48627,["02260012","014E0000","015C0000","01520000","81660020","002A0000","00060000","00010000"],0,17],[65819,"LA",61171,["02260012","014E0000","015C0000","01520000","81660020","002A0000","00060000","00010000"],0,17],[65821,"STH",48883,["02260012","014E0000","015C0000","01520000","81660020","002A0000","000A0000","00010000"],0,17],[65823,"BCR",49376,["02260012","014E0000","015C0000","01520000","81660020","002A0000","000A0000","00010000"],0,17],[65824,"SRET",38888,["02260012","014E0000","015C0000","01520000","81660020","002A0000","000A0000","00010000"],0,17],[65567,"LFXI",49123,["02120014","014E0000","015C0000","01520000","81660020","002A0000","00060000","00010000"],1,17],[65568,"AH",34571,["02120014","014E0000","015C0000","01520000","81660020","002A0000","00060000","00010000"],1,17],[65569,"STH",48907,["02120014","014E0000","015C0000","01520000","81660020","002A0000","00060000","00020000"],1,17],[65570,"CHI",46567,["02120014","014E0000","015C0000","01520000","81660020","002A0000","00060000","00020000"],1,17],[65572,"BCB",56910,["02120014","014E0000","015C0000","01520000","81660020","002A0000","00060000","00020000"],3,17],[65554,"LFXI",48872,["02120014","014E0000","015C0000","01520000","81660020","002A0000","00060000","00020000"],3,17],[65555,"LFXI",48613,["02120014","014E0000","015C0000","01520000","81660020","002A0000","00060000","00020000"],3,17],[65556,"SCAL",53503,["02120014","014E0000","015C0000","01520000","81660020","00030000","00060000","00020000"],3,17],[65806,"NIST",46628,["02260012","014E0000","015C0000","01520000","81660020","00030000","00060000","00020000"],3,17],[65808,"STH",48883,["02260012","014E0000","015C0000","01520000","81660020","00030000","00060000","00020000"],0,17],[65810,"STH",48627,["02260012","014E0000","015C0000","01520000","81660020","00030000","00060000","00020000"],0,17],[65812,"BAL",58615,["02260012","014E0000","015C0000","01520000","81660020","00030000","00060000","00020000"],0,17],[65870,"BCR",51172,["02260012","014E0000","015C0000","01520000","81160020","00030000","00060000","00020000"],0,17],[65814,"SRET",38888,["02260012","014E0000","015C0000","01520000","81160020","00030000","00060000","00020000"],0,17],[65558,"LR",7655,["02120014","014E0000","015C0000","01520000","81660020","00030000","00060000","00020000"],3,17],[65559,"SCAL",53503,["02120014","014E0000","015C0000","01520000","81660020","00020000","00060000","00020000"],1,17],[65815,"NIST",46628,["02260012","014E0000","015C0000","01520000","81660020","00020000","00060000","00020000"],1,17],[65817,"STH",48627,["02260012","014E0000","015C0000","01520000","81660020","00020000","00060000","00020000"],0,17],[65819,"LA",61171,["02260012","014E0000","015C0000","01520000","81660020","00020000","00060000","00020000"],0,17],[65821,"STH",48883,["02260012","014E0000","015C0000","01520000","81660020","00020000","000A0000","00020000"],0,17],[65823,"BCR",49376,["02260012","014E0000","015C0000","01520000","81660020","00020000","000A0000","00020000"],0,17],[65824,"SRET",38888,["02260012","014E0000","015C0000","01520000","81660020","00020000","000A0000","00020000"],0,58],[65561,"LA",59961,["02120014","014E0000","015C0000","01520000","81660020","00020000","00060000","00020000"],1,58],[65562,"SCAL",53503,["02120014","014E0000","015C0000","01520000","81660020","00020000","00060000","00020000"],1,58],[65793,"NIST",46628,["02260012","014E0000","015C0000","01520000","81660020","00020000","00060000","00020000"],1,58],[65795,"LA",59891,["02260012","014E0000","015C0000","01520000","81660020","00020000","00060000","00020000"],0,58],[65797,"BAL",58615,["02260012","01900000","015C0000","01520000","81660020","00020000","00060000","00020000"],0,58],[65682,"SHW",41473,["02260012","01900000","015C0000","01520000","81070020","00020000","00060000","00020000"],0,58],[65683,"LH",39682,["02260012","01900000","015C0000","01520000","81070020","00020000","00060000","00020000"],0,58],[65684,"NHI",46819,["02260012","01900000","015C0000","00080000","81070020","00020000","00060000","00020000"],1,58],[65686,"LH",40193,["02260012","01900000","015C0000","00080000","81070020","00020000","00060000","00020000"],3,58],[65687,"SRL",62754,["02260012","01900000","015C0000","00080000","81070020","FFFF0000","00060000","00020000"],3,58],[65688,"NHI",46821,["02260012","01900000","015C0000","00080000","81070020","00FFFF00","00060000","00020000"],3,58],[65690,"CR",5093,["02260012","01900000","015C0000","00080000","81070020","00FF0000","00060000","00020000"],3,58],[65691,"BCF",56836,["02260012","01900000","015C0000","00080000","81070020","00FF0000","00060000","00020000"],3,58],[65693,"SLL",62752,["02260012","01900000","015C0000","00080000","81070020","00FF0000","00060000","00020000"],3,58],[65694,"OR",11747,["02260012","01900000","015C0000","00080000","81070020","FF000000","00060000","00020000"],3,58],[65695,"STH",48385,["02260012","01900000","015C0000","00080000","81070020","FF080000","00060000","00020000"],3,58],[65696,"LA",60167,["02260012","01900000","015C0000","00080000","81070020","FF080000","00060000","00020000"],3,58],[65697,"CHI",46563,["02260012","01900000","015C0000","00090000","81070020","FF080000","00060000","00020000"],3,58],[65699,"BCF",56344,["02260012","01900000","015C0000","00090000","81070020","FF080000","00060000","00020000"],1,58],[65700,"SRL",62214,["02260012","01900000","015C0000","00090000","81070020","FF080000","00060000","00020000"],1,58],[65701,"LH",40198,["02260012","01900000","015C0000","00048000","81070020","FF080000","00060000","00020000"],1,58],[65702,"STH",48389,["02260012","01900000","015C0000","00048000","81070020","47500000","00060000","00020000"],1,58],[65703,"LA",59653,["02260012","01900000","015C0000","00048000","81070020","47500000","00060000","00020000"],1,58],[65704,"LA",59910,["02260012","01910000","015C0000","00048000","81070020","47500000","00060000","00020000"],1,58],[65705,"BCTB",56087,["02260012","01910000","015D0000","00048000","81070020","47500000","00060000","00020000"],1,58],[65701,"LH",40198,["02260012","01910000","015D0000","00038000","81070020","47500000","00060000","00020000"],1,58],[65702,"STH",48389,["02260012","01910000","015D0000","00038000","81070020","43200000","00060000","00020000"],1,58],[65703,"LA",59653,["02260012","01910000","015D0000","00038000","81070020","43200000","00060000","00020000"],1,58],[65704,"LA",59910,["02260012","01920000","015D0000","00038000","81070020","43200000","00060000","00020000"],1,58],[65705,"BCTB",56087,["02260012","01920000","015E0000","00038000","81070020","43200000","00060000","00020000"],1,58],[65701,"LH",40198,["02260012","01920000","015E0000","00028000","81070020","43200000","00060000","00020000"],1,58],[65702,"STH",48389,["02260012","01920000","015E0000","00028000","81070020","564F0000","00060000","00020000"],1,58],[65703,"LA",59653,["02260012","01920000","015E0000","00028000","81070020","564F0000","00060000","00020000"],1,58],[65704,"LA",59910,["02260012","01930000","015E0000","00028000","81070020","564F0000","00060000","00020000"],1,58],[65705,"BCTB",56087,["02260012","01930000","015F0000","00028000","81070020","564F0000","00060000","00020000"],1,58],[65701,"LH",40198,["02260012","01930000","015F0000","00018000","81070020","564F0000","00060000","00020000"],1,58],[65702,"STH",48389,["02260012","01930000","015F0000","00018000","81070020","54450000","00060000","00020000"],1,58],[65703,"LA",59653,["02260012","01930000","015F0000","00018000","81070020","54450000","00060000","00020000"],1,58],[65704,"LA",59910,["02260012","01940000","015F0000","00018000","81070020","54450000","00060000","00020000"],1,58],[65705,"BCTB",56087,["02260012","01940000","01600000","00018000","81070020","54450000","00060000","00020000"],1,58],[65706,"LH",39716,["02260012","01940000","01600000","00008000","81070020","54450000","00060000","00020000"],1,58],[65707,"LH",39188,["02260012","01940000","01600000","00000000","81070020","54450000","00060000","00020000"],0,58],[65708,"BCRE",51180,["02260012","00000000","01600000","00000000","81070020","54450000","00060000","00020000"],0,58],[65799,"LA",61171,["02260012","00000000","01600000","00000000","81070020","54450000","00060000","00020000"],0,58],[65801,"STH",48883,["02260012","00000000","01600000","00000000","81070020","54450000","000D0000","00020000"],0,58],[65803,"SCAL",53503,["02260012","00000000","01600000","00000000","81070020","54450000","000D0000","00020000"],0,58],[65825,"NIST",46628,["02380012","00000000","01600000","00000000","81070020","54450000","000D0000","00020000"],0,58],[65827,"BCB",57110,["02380012","00000000","01600000","00000000","81070020","54450000","000D0000","00020000"],0,58],[65823,"BCR",49376,["02380012","00000000","01600000","00000000","81070020","54450000","000D0000","00020000"],0,58],[65824,"SRET",38888,["02380012","00000000","01600000","00000000","81070020","54450000","000D0000","00020000"],0,58],[65805,"SRET",38888,["02260012","00000000","01600000","00000000","81070020","54450000","000D0000","00020000"],0,58],[65564,"LH",40207,["02120014","014E0000","015C0000","01520000","81660020","00020000","00060000","00020000"],1,58],[65565,"SCAL",53503,["02120014","014E0000","015C0000","01520000","81660020","002A0000","00060000","00020000"],1,58],[65815,"NIST",46628,["02260012","014E0000","015C0000","01520000","81660020","002A0000","00060000","00020000"],1,58],[65817,"STH",48627,["02260012","014E0000","015C0000","01520000","81660020","002A0000","00060000","00020000"],0,58],[65819,"LA",61171,["02260012","014E0000","015C0000","01520000","81660020","002A0000","00060000","00020000"],0,58],[65821,"STH",48883,["02260012","014E0000","015C0000","01520000","81660020","002A0000","000A0000","00020000"],0,58],[65823,"BCR",49376,["02260012","014E0000","015C0000","01520000","81660020","002A0000","000A0000","00020000"],0,58],[65824,"SRET",38888,["02260012","014E0000","015C0000","01520000","81660020","002A0000","000A0000","00020000"],0,58],[65567,"LFXI",49123,["02120014","014E0000","015C0000","01520000","81660020","002A0000","00060000","00020000"],1,58],[65568,"AH",34571,["02120014","014E0000","015C0000","01520000","81660020","002A0000","00060000","00010000"],1,58],[65569,"STH",48907,["02120014","014E0000","015C0000","01520000","81660020","002A0000","00060000","00030000"],1,58],[65570,"CHI",46567,["02120014","014E0000","015C0000","01520000","81660020","002A0000","00060000","00030000"],1,58],[65572,"BCB",56910,["02120014","014E0000","015C0000","01520000","81660020","002A0000","00060000","00030000"],0,58],[65554,"LFXI",48872,["02120014","014E0000","015C0000","01520000","81660020","002A0000","00060000","00030000"],0,58],[65555,"LFXI",48613,["02120014","014E0000","015C0000","01520000","81660020","002A0000","00060000","00030000"],0,58],[65556,"SCAL",53503,["02120014","014E0000","015C0000","01520000","81660020","00030000","00060000","00030000"],0,58],[65806,"NIST",46628,["02260012","014E0000","015C0000","01520000","81660020","00030000","00060000","00030000"],0,58],[65808,"STH",48883,["02260012","014E0000","015C0000","01520000","81660020","00030000","00060000","00030000"],0,58],[65810,"STH",48627,["02260012","014E0000","015C0000","01520000","81660020","00030000","00060000","00030000"],0,58],[65812,"BAL",58615,["02260012","014E0000","015C0000","01520000","81660020","00030000","00060000","00030000"],0,58],[65870,"BCR",51172,["02260012","014E0000","015C0000","01520000","81160020","00030000","00060000","00030000"],0,58],[65814,"SRET",38888,["02260012","014E0000","015C0000","01520000","81160020","00030000","00060000","00030000"],0,58],[65558,"LR",7655,["02120014","014E0000","015C0000","01520000","81660020","00030000","00060000","00030000"],0,58],[65559,"SCAL",53503,["02120014","014E0000","015C0000","01520000","81660020","00030000","00060000","00030000"],1,58],[65815,"NIST",46628,["02260012","014E0000","015C0000","01520000","81660020","00030000","00060000","00030000"],1,58],[65817,"STH",48627,["02260012","014E0000","015C0000","01520000","81660020","00030000","00060000","00030000"],0,58],[65819,"LA",61171,["02260012","014E0000","015C0000","01520000","81660020","00030000","00060000","00030000"],0,58],[65821,"STH",48883,["02260012","014E0000","015C0000","01520000","81660020","00030000","000A0000","00030000"],0,58],[65823,"BCR",49376,["02260012","014E0000","015C0000","01520000","81660020","00030000","000A0000","00030000"],0,58],[65824,"SRET",38888,["02260012","014E0000","015C0000","01520000","81660020","00030000","000A0000","00030000"],0,99],[65561,"LA",59961,["02120014","014E0000","015C0000","01520000","81660020","00030000","00060000","00030000"],1,99],[65562,"SCAL",53503,["02120014","014E0000","015C0000","01520000","81660020","00030000","00060000","00030000"],1,99],[65793,"NIST",46628,["02260012","014E0000","015C0000","01520000","81660020","00030000","00060000","00030000"],1,99],[65795,"LA",59891,["02260012","014E0000","015C0000","01520000","81660020","00030000","00060000","00030000"],0,99],[65797,"BAL",58615,["02260012","01900000","015C0000","01520000","81660020","00030000","00060000","00030000"],0,99],[65682,"SHW",41473,["02260012","01900000","015C0000","01520000","81070020","00030000","00060000","00030000"],0,99],[65683,"LH",39682,["02260012","01900000","015C0000","01520000","81070020","00030000","00060000","00030000"],0,99],[65684,"NHI",46819,["02260012","01900000","015C0000","00080000","81070020","00030000","00060000","00030000"],1,99],[65686,"LH",40193,["02260012","01900000","015C0000","00080000","81070020","00030000","00060000","00030000"],3,99],[65687,"SRL",62754,["02260012","01900000","015C0000","00080000","81070020","FFFF0000","00060000","00030000"],3,99],[65688,"NHI",46821,["02260012","01900000","015C0000","00080000","81070020","00FFFF00","00060000","00030000"],3,99],[65690,"CR",5093,["02260012","01900000","015C0000","00080000","81070020","00FF0000","00060000","00030000"],3,99],[65691,"BCF",56836,["02260012","01900000","015C0000","00080000","81070020","00FF0000","00060000","00030000"],3,99],[65693,"SLL",62752,["02260012","01900000","015C0000","00080000","81070020","00FF0000","00060000","00030000"],3,99],[65694,"OR",11747,["02260012","01900000","015C0000","00080000","81070020","FF000000","00060000","00030000"],3,99],[65695,"STH",48385,["02260012","01900000","015C0000","00080000","81070020","FF080000","00060000","00030000"],3,99],[65696,"LA",60167,["02260012","01900000","015C0000","00080000","81070020","FF080000","00060000","00030000"],3,99],[65697,"CHI",46563,["02260012","01900000","015C0000","00090000","81070020","FF080000","00060000","00030000"],3,99],[65699,"BCF",56344,["02260012","01900000","015C0000","00090000","81070020","FF080000","00060000","00030000"],1,99],[65700,"SRL",62214,["02260012","01900000","015C0000","00090000","81070020","FF080000","00060000","00030000"],1,99],[65701,"LH",40198,["02260012","01900000","015C0000","00048000","81070020","FF080000","00060000","00030000"],1,99],[65702,"STH",48389,["02260012","01900000","015C0000","00048000","81070020","47500000","00060000","00030000"],1,99],[65703,"LA",59653,["02260012","01900000","015C0000","00048000","81070020","47500000","00060000","00030000"],1,99],[65704,"LA",59910,["02260012","01910000","015C0000","00048000","81070020","47500000","00060000","00030000"],1,99],[65705,"BCTB",56087,["02260012","01910000","015D0000","00048000","81070020","47500000","00060000","00030000"],1,99],[65701,"LH",40198,["02260012","01910000","015D0000","00038000","81070020","47500000","00060000","00030000"],1,99],[65702,"STH",48389,["02260012","01910000","015D0000","00038000","81070020","43200000","00060000","00030000"],1,99],[65703,"LA",59653,["02260012","01910000","015D0000","00038000","81070020","43200000","00060000","00030000"],1,99],[65704,"LA",59910,["02260012","01920000","015D0000","00038000","81070020","43200000","00060000","00030000"],1,99],[65705,"BCTB",56087,["02260012","01920000","015E0000","00038000","81070020","43200000","00060000","00030000"],1,99],[65701,"LH",40198,["02260012","01920000","015E0000","00028000","81070020","43200000","00060000","00030000"],1,99],[65702,"STH",48389,["02260012","01920000","015E0000","00028000","81070020","564F0000","00060000","00030000"],1,99],[65703,"LA",59653,["02260012","01920000","015E0000","00028000","81070020","564F0000","00060000","00030000"],1,99],[65704,"LA",59910,["02260012","01930000","015E0000","00028000","81070020","564F0000","00060000","00030000"],1,99],[65705,"BCTB",56087,["02260012","01930000","015F0000","00028000","81070020","564F0000","00060000","00030000"],1,99],[65701,"LH",40198,["02260012","01930000","015F0000","00018000","81070020","564F0000","00060000","00030000"],1,99],[65702,"STH",48389,["02260012","01930000","015F0000","00018000","81070020","54450000","00060000","00030000"],1,99],[65703,"LA",59653,["02260012","01930000","015F0000","00018000","81070020","54450000","00060000","00030000"],1,99],[65704,"LA",59910,["02260012","01940000","015F0000","00018000","81070020","54450000","00060000","00030000"],1,99],[65705,"BCTB",56087,["02260012","01940000","01600000","00018000","81070020","54450000","00060000","00030000"],1,99],[65706,"LH",39716,["02260012","01940000","01600000","00008000","81070020","54450000","00060000","00030000"],1,99],[65707,"LH",39188,["02260012","01940000","01600000","00000000","81070020","54450000","00060000","00030000"],0,99],[65708,"BCRE",51180,["02260012","00000000","01600000","00000000","81070020","54450000","00060000","00030000"],0,99],[65799,"LA",61171,["02260012","00000000","01600000","00000000","81070020","54450000","00060000","00030000"],0,99],[65801,"STH",48883,["02260012","00000000","01600000","00000000","81070020","54450000","000D0000","00030000"],0,99],[65803,"SCAL",53503,["02260012","00000000","01600000","00000000","81070020","54450000","000D0000","00030000"],0,99],[65825,"NIST",46628,["02380012","00000000","01600000","00000000","81070020","54450000","000D0000","00030000"],0,99],[65827,"BCB",57110,["02380012","00000000","01600000","00000000","81070020","54450000","000D0000","00030000"],0,99],[65823,"BCR",49376,["02380012","00000000","01600000","00000000","81070020","54450000","000D0000","00030000"],0,99],[65824,"SRET",38888,["02380012","00000000","01600000","00000000","81070020","54450000","000D0000","00030000"],0,99],[65805,"SRET",38888,["02260012","00000000","01600000","00000000","81070020","54450000","000D0000","00030000"],0,99],[65564,"LH",40207,["02120014","014E0000","015C0000","01520000","81660020","00030000","00060000","00030000"],1,99],[65565,"SCAL",53503,["02120014","014E0000","015C0000","01520000","81660020","002A0000","00060000","00030000"],1,99],[65815,"NIST",46628,["02260012","014E0000","015C0000","01520000","81660020","002A0000","00060000","00030000"],1,99],[65817,"STH",48627,["02260012","014E0000","015C0000","01520000","81660020","002A0000","00060000","00030000"],0,99],[65819,"LA",61171,["02260012","014E0000","015C0000","01520000","81660020","002A0000","00060000","00030000"],0,99],[65821,"STH",48883,["02260012","014E0000","015C0000","01520000","81660020","002A0000","000A0000","00030000"],0,99],[65823,"BCR",49376,["02260012","014E0000","015C0000","01520000","81660020","002A0000","000A0000","00030000"],0,99],[65824,"SRET",38888,["02260012","014E0000","015C0000","01520000","81660020","002A0000","000A0000","00030000"],0,99],[65567,"LFXI",49123,["02120014","014E0000","015C0000","01520000","81660020","002A0000","00060000","00030000"],1,99],[65568,"AH",34571,["02120014","014E0000","015C0000","01520000","81660020","002A0000","00060000","00010000"],1,99],[65569,"STH",48907,["02120014","014E0000","015C0000","01520000","81660020","002A0000","00060000","00040000"],1,99],[65570,"CHI",46567,["02120014","014E0000","015C0000","01520000","81660020","002A0000","00060000","00040000"],1,99],[65572,"BCB",56910,["02120014","014E0000","015C0000","01520000","81660020","002A0000","00060000","00040000"],1,99],[65573,"LFXI",48872,["02120014","014E0000","015C0000","01520000","81660020","002A0000","00060000","00040000"],1,99],[65574,"LFXI",48613,["02120014","014E0000","015C0000","01520000","81660020","002A0000","00060000","00040000"],1,99],[65575,"SCAL",53503,["02120014","014E0000","015C0000","01520000","81660020","00030000","00060000","00040000"],1,99],[65806,"NIST",46628,["02260012","014E0000","015C0000","01520000","81660020","00030000","00060000","00040000"],1,99],[65808,"STH",48883,["02260012","014E0000","015C0000","01520000","81660020","00030000","00060000","00040000"],0,99],[65810,"STH",48627,["02260012","014E0000","015C0000","01520000","81660020","00030000","00060000","00040000"],0,99],[65812,"BAL",58615,["02260012","014E0000","015C0000","01520000","81660020","00030000","00060000","00040000"],0,99],[65870,"BCR",51172,["02260012","014E0000","015C0000","01520000","81160020","00030000","00060000","00040000"],0,99],[65814,"SRET",38888,["02260012","014E0000","015C0000","01520000","81160020","00030000","00060000","00040000"],0,99],[65577,"LA",59937,["02120014","014E0000","015C0000","01520000","81660020","00030000","00060000","00040000"],1,99],[65578,"SCAL",53503,["02120014","014E0000","01560000","01520000","81660020","00030000","00060000","00040000"],1,99],[65793,"NIST",46628,["02260012","014E0000","01560000","01520000","81660020","00030000","00060000","00040000"],1,99],[65795,"LA",59891,["02260012","014E0000","01560000","01520000","81660020","00030000","00060000","00040000"],0,99],[65797,"BAL",58615,["02260012","01900000","01560000","01520000","81660020","00030000","00060000","00040000"],0,99],[65682,"SHW",41473,["02260012","01900000","01560000","01520000","81070020","00030000","00060000","00040000"],0,99],[65683,"LH",39682,["02260012","01900000","01560000","01520000","81070020","00030000","00060000","00040000"],0,99],[65684,"NHI",46819,["02260012","01900000","01560000","00090000","81070020","00030000","00060000","00040000"],1,99],[65686,"LH",40193,["02260012","01900000","01560000","00090000","81070020","00030000","00060000","00040000"],3,99],[65687,"SRL",62754,["02260012","01900000","01560000","00090000","81070020","FFFF0000","00060000","00040000"],3,99],[65688,"NHI",46821,["02260012","01900000","01560000","00090000","81070020","00FFFF00","00060000","00040000"],3,99],[65690,"CR",5093,["02260012","01900000","01560000","00090000","81070020","00FF0000","00060000","00040000"],3,99],[65691,"BCF",56836,["02260012","01900000","01560000","00090000","81070020","00FF0000","00060000","00040000"],3,99],[65693,"SLL",62752,["02260012","01900000","01560000","00090000","81070020","00FF0000","00060000","00040000"],3,99],[65694,"OR",11747,["02260012","01900000","01560000","00090000","81070020","FF000000","00060000","00040000"],3,99],[65695,"STH",48385,["02260012","01900000","01560000","00090000","81070020","FF090000","00060000","00040000"],3,99],[65696,"LA",60167,["02260012","01900000","01560000","00090000","81070020","FF090000","00060000","00040000"],3,99],[65697,"CHI",46563,["02260012","01900000","01560000","000A0000","81070020","FF090000","00060000","00040000"],3,99],[65699,"BCF",56344,["02260012","01900000","01560000","000A0000","81070020","FF090000","00060000","00040000"],1,99],[65700,"SRL",62214,["02260012","01900000","01560000","000A0000","81070020","FF090000","00060000","00040000"],1,99],[65701,"LH",40198,["02260012","01900000","01560000","00050000","81070020","FF090000","00060000","00040000"],1,99],[65702,"STH",48389,["02260012","01900000","01560000","00050000","81070020","53450000","00060000","00040000"],1,99],[65703,"LA",59653,["02260012","01900000","01560000","00050000","81070020","53450000","00060000","00040000"],1,99],[65704,"LA",59910,["02260012","01910000","01560000","00050000","81070020","53450000","00060000","00040000"],1,99],[65705,"BCTB",56087,["02260012","01910000","01570000","00050000","81070020","53450000","00060000","00040000"],1,99],[65701,"LH",40198,["02260012","01910000","01570000","00040000","81070020","53450000","00060000","00040000"],1,99],[65702,"STH",48389,["02260012","01910000","01570000","00040000","81070020","54200000","00060000","00040000"],1,99],[65703,"LA",59653,["02260012","01910000","01570000","00040000","81070020","54200000","00060000","00040000"],1,99],[65704,"LA",59910,["02260012","01920000","01570000","00040000","81070020","54200000","00060000","00040000"],1,99],[65705,"BCTB",56087,["02260012","01920000","01580000","00040000","81070020","54200000","00060000","00040000"],1,99],[65701,"LH",40198,["02260012","01920000","01580000","00030000","81070020","54200000","00060000","00040000"],1,99],[65702,"STH",48389,["02260012","01920000","01580000","00030000","81070020","49530000","00060000","00040000"],1,99],[65703,"LA",59653,["02260012","01920000","01580000","00030000","81070020","49530000","00060000","00040000"],1,99],[65704,"LA",59910,["02260012","01930000","01580000","00030000","81070020","49530000","00060000","00040000"],1,99],[65705,"BCTB",56087,["02260012","01930000","01590000","00030000","81070020","49530000","00060000","00040000"],1,99],[65701,"LH",40198,["02260012","01930000","01590000","00020000","81070020","49530000","00060000","00040000"],1,99],[65702,"STH",48389,["02260012","01930000","01590000","00020000","81070020","20470000","00060000","00040000"],1,99],[65703,"LA",59653,["02260012","01930000","01590000","00020000","81070020","20470000","00060000","00040000"],1,99],[65704,"LA",59910,["02260012","01940000","01590000","00020000","81070020","20470000","00060000","00040000"],1,99],[65705,"BCTB",56087,["02260012","01940000","015A0000","00020000","81070020","20470000","00060000","00040000"],1,99],[65701,"LH",40198,["02260012","01940000","015A0000","00010000","81070020","20470000","00060000","00040000"],1,99],[65702,"STH",48389,["02260012","01940000","015A0000","00010000","81070020","4F000000","00060000","00040000"],1,99],[65703,"LA",59653,["02260012","01940000","015A0000","00010000","81070020","4F000000","00060000","00040000"],1,99],[65704,"LA",59910,["02260012","01950000","015A0000","00010000","81070020","4F000000","00060000","00040000"],1,99],[65705,"BCTB",56087,["02260012","01950000","015B0000","00010000","81070020","4F000000","00060000","00040000"],1,99],[65706,"LH",39716,["02260012","01950000","015B0000","00000000","81070020","4F000000","00060000","00040000"],1,99],[65707,"LH",39188,["02260012","01950000","015B0000","00000000","81070020","4F000000","00060000","00040000"],0,99],[65708,"BCRE",51180,["02260012","00000000","015B0000","00000000","81070020","4F000000","00060000","00040000"],0,99],[65799,"LA",61171,["02260012","00000000","015B0000","00000000","81070020","4F000000","00060000","00040000"],0,99],[65801,"STH",48883,["02260012","00000000","015B0000","00000000","81070020","4F000000","000D0000","00040000"],0,99],[65803,"SCAL",53503,["02260012","00000000","015B0000","00000000","81070020","4F000000","000D0000","00040000"],0,99],[65825,"NIST",46628,["02380012","00000000","015B0000","00000000","81070020","4F000000","000D0000","00040000"],0,99],[65827,"BCB",57110,["02380012","00000000","015B0000","00000000","81070020","4F000000","000D0000","00040000"],0,99],[65823,"BCR",49376,["02380012","00000000","015B0000","00000000","81070020","4F000000","000D0000","00040000"],0,99],[65824,"SRET",38888,["02380012","00000000","015B0000","00000000","81070020","4F000000","000D0000","00040000"],0,140],[65805,"SRET",38888,["02260012","00000000","015B0000","00000000","81070020","4F000000","000D0000","00040000"],0,140],[65580,"SVC",51705,["02120014","014E0000","01560000","01520000","81660020","00030000","00060000","00040000"],1,140]],"output":"LAZARUS AP LIVES\n          1     GPC VOTE              42\n          2     GPC VOTE              42\n          3     GPC VOTE              42\nSET IS GO\n"};
 const S = T.steps, N = S.length;
+const BEATS = [
+ {a:0,b:0,ch:"Chapter 1 · Ignition",t:"The very first instruction. START is two words the linker planted at the entry point: a single BAL — \u201cbranch and link\u201d — that leaps into the program proper and remembers the way back. The address jumps from 10164 to 10000: the program lives in the memory sector the Shuttle reserved for code."},
+ {a:1,b:8,ch:"Chapter 2 · Waking up",t:"Housekeeping. The program loads its base addresses — where its data lives, where its stack lives — into registers. Nothing visible happens yet; this is the machine putting on its gloves."},
+ {a:9,b:107,ch:"Chapter 3 · The first words",t:"A SCAL — \u201cstack call\u201d — dives into the runtime library to perform WRITE(6) 'LAZARUS AP LIVES'. Watch the tape: dozens of small instructions shuffle each character into an output buffer, position the print column, and talk to the I/O traps. Printing one line of text takes this machine about a hundred instructions. At the SRET (\u201cstack return\u201d), the line commits to the console below."},
+ {a:108,b:188,ch:"Chapter 4 · The loop, first pass",t:"Now the DO FOR loop. The counter I lives in a register — watch the register panel flash amber as it becomes 1. Then another WRITE: the integer is right-justified into an 11-column field (that\u2019s why the 1 floats in from the left margin), followed by GPC VOTE and the value 42."},
+ {a:189,b:269,ch:"Chapter 5 · Second pass",t:"The same machinery, counter at 2. Notice the rhythm on the tape — compare, branch, call, return — identical to the first pass. Computers don\u2019t get bored."},
+ {a:270,b:397,ch:"Chapter 6 · Third pass",t:"Counter at 3, the final vote prints. On a real orbiter this pattern — read a value, compare, report — ran continuously as the five computers checked one another\u2019s arithmetic."},
+ {a:398,b:400,ch:"Chapter 7 · Sign-off",t:"SET IS GO is committed, and the last instruction is an SVC — a \u201csupervisor call\u201d, the machine\u2019s formal way of saying the program is complete. Its code, 0x15, is the exact convention the Shuttle\u2019s software used to end every run. The computer goes quiet."}
+];
+const EXPLAIN = {BAL:"jump into a routine, remembering the way back",
+ BALR:"jump via a register, remembering the way back",
+ SCAL:"call a subroutine, saving all registers on the stack",
+ SRET:"return from a subroutine, restoring everything",
+ LA:"load an address into a register", LH:"fetch a value from memory",
+ L:"fetch a full word from memory", STH:"store a value into memory",
+ ST:"store a full word into memory", LR:"copy one register to another",
+ LFXI:"load a small constant", AHI:"add a constant",
+ A:"add", AH:"add a halfword", S:"subtract", SH:"subtract a halfword",
+ C:"compare", CH:"compare with memory", CHI:"compare with a constant",
+ CR:"compare two registers",
+ BC:"branch if the last comparison says so", BCR:"branch via register if condition holds",
+ BCF:"short branch forward if condition holds", BCB:"short branch backward if condition holds",
+ BCT:"count down and branch until zero", BIX:"step the loop index and branch",
+ MVH:"move a block of memory", SVC:"ask the supervisor to take over — here, to end the program",
+ SLL:"shift bits left", SRL:"shift bits right", SRA:"shift, keeping the sign",
+ N:"bitwise AND", O:"bitwise OR", X:"bitwise exclusive-OR",
+ TS:"test and set a lock", NOP:"do nothing"};
 let i = 0, timer = null;
 const scrub = document.getElementById('scrub'); scrub.max = N-1;
-const CCN = ['00 zero','01 +','10 ?','11 &minus;'];
+const CCN = ['zero','positive','—','negative'];
+const chBox = document.getElementById('chapters');
+BEATS.forEach((b,k)=>{
+  const btn = document.createElement('button');
+  btn.textContent = (k+1)+'. '+b.ch.split('· ')[1];
+  btn.onclick = ()=>{stop();go(b.a);};
+  chBox.appendChild(btn);
+});
+function beatOf(n){ return BEATS.findIndex(b=>n>=b.a&&n<=b.b); }
 function render(){
   const [ic, m, hw, r, cc, olen] = S[i];
   document.getElementById('stepnum').textContent = 'step '+(i+1)+' / '+N;
   scrub.value = i;
-  // tape window
-  const lo = Math.max(0, i-6), hi = Math.min(N, i+9);
+  const bi = beatOf(i), b = BEATS[bi];
+  document.getElementById('narr-ch').textContent = b.ch;
+  document.getElementById('narr-p').textContent = b.t;
+  [...chBox.children].forEach((c,k)=>c.classList.toggle('on',k===bi));
+  document.getElementById('now').textContent =
+    m + ' — ' + (EXPLAIN[m] || 'a machine housekeeping step');
+  const lo = Math.max(0, i-5), hi = Math.min(N, i+8);
   let rows = '';
   for(let k=lo;k<hi;k++){
     const s = S[k];
     rows += '<li'+(k===i?' class="cur"':'')+'><span class="a">'
       + s[0].toString(16).toUpperCase().padStart(5,'0')
-      + '</span><span class="h">'+s[2].toString(16).toUpperCase().padStart(4,'0')
-      + '</span><span class="m">'+s[1]+'</span></li>';
+      + '</span><span class="m">'+s[1]+'</span><span class="e">'
+      + (EXPLAIN[s[1]]||'').slice(0,38)+'</span></li>';
   }
   document.getElementById('tape').innerHTML = rows;
   const prev = i>0 ? S[i-1][3] : r;
@@ -130,9 +300,8 @@ function render(){
     rt += '<tr><td class="rn">R'+k+'</td><td class="'+(chg?'chg':'')+'">'+r[k]+'</td></tr>';
   }
   document.getElementById('regs').innerHTML = rt;
-  document.getElementById('cc').innerHTML = CCN[cc];
+  document.getElementById('cc').textContent = CCN[cc];
   document.getElementById('ic').textContent = ic.toString(16).toUpperCase().padStart(5,'0');
-  document.getElementById('sec').textContent = (ic>>15);
   document.getElementById('crt').innerHTML =
     escapeHtml(T.output.slice(0, olen)) + '<span class="caret">&#9608;</span>';
 }
@@ -140,21 +309,27 @@ function escapeHtml(s){return s.replace(/&/g,'&amp;').replace(/</g,'&lt;')}
 function go(n){ i = Math.max(0, Math.min(N-1, n)); render(); }
 function stop(){ if(timer){clearInterval(timer); timer=null;
   document.getElementById('play').textContent='Run';} }
+function playToggle(){
+  const p = document.getElementById('play');
+  if(timer){stop();return}
+  p.textContent = 'Hold';
+  timer = setInterval(()=>{ if(i>=N-1){stop();return} go(i+1); },
+    +document.getElementById('speed').value);
+}
 document.getElementById('b0').onclick = ()=>{stop();go(0)};
 document.getElementById('bm').onclick = ()=>{stop();go(i-1)};
 document.getElementById('bp').onclick = ()=>{stop();go(i+1)};
 document.getElementById('bend').onclick = ()=>{stop();go(N-1)};
-scrub.oninput = ()=>{stop();go(+scrub.value)};
-document.getElementById('play').onclick = function(){
-  if(timer){stop();return}
-  this.textContent = 'Hold';
-  timer = setInterval(()=>{ if(i>=N-1){stop();return} go(i+1); },
-    +document.getElementById('speed').value);
+document.getElementById('play').onclick = playToggle;
+document.getElementById('cta').onclick = ()=>{
+  document.getElementById('console').scrollIntoView({behavior:'smooth'});
+  if(!timer) playToggle();
 };
+scrub.oninput = ()=>{stop();go(+scrub.value)};
 document.addEventListener('keydown', e=>{
   if(e.key==='ArrowRight'){stop();go(i+1)}
   else if(e.key==='ArrowLeft'){stop();go(i-1)}
-  else if(e.key===' '){e.preventDefault();document.getElementById('play').click()}
+  else if(e.key===' '&&e.target.tagName!=='BUTTON'){e.preventDefault();playToggle()}
 });
 go(0);
 </script>
