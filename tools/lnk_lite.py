@@ -64,7 +64,11 @@ def parse_deck(path):
                 styp = ent[8]
                 # type byte: 0x00 SD, 0x02 ER (per readObject101S flags)
                 kind = "ER" if styp == 0x02 else "SD"
-                cur["esds"].append({"name": name, "kind": kind})
+                # SDs carry their origin within the module's CSECT chain
+                # (bytes 9-12, in bytes): ASM101S adcons are chain-
+                # relative, so relocation must subtract this.
+                addr = be(ent[9:12]) if kind == "SD" else 0
+                cur["esds"].append({"name": name, "kind": kind, "addr": addr})
         elif typ == "TXT":
             cur["txt"].append({
                 "addr": be(card[5:8]),
@@ -207,13 +211,17 @@ def standalone(argv):
         for t in mod["txt"]:
             b = addr_of[t["esdid"]] * 2
             image[b + t["addr"]:b + t["addr"] + t["size"]] = t["data"]
+        chain = {i: e["addr"] // 2 for i, e in enumerate(mod["esds"], start=1)}
         for r in mod["rld"]:
-            target = addr_of[r["rel"]]
+            # Adcon contents are chain-relative (they already include the
+            # target CSECT's offset within its module), so the fixup is
+            # placed-base minus declared chain offset.
+            target = addr_of[r["rel"]] - chain.get(r["rel"], 0)
             spot = addr_of[r["pos"]] * 2 + r["addr"]
             if r["flags"] in (0x00, 0x10):
-                val = sector16(target)
+                val = sector16(target & 0xFFFF)
             elif r["flags"] == 0x40:
-                val = 0x0700 | ((target >> 15) << 4)
+                val = 0x0700 | (((target & 0x7FFFF) >> 15) << 4)
             else:
                 sys.exit(f"unknown RLD flags {r['flags']:02X}")
             old = be(image[spot:spot + 2])

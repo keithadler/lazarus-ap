@@ -40,3 +40,16 @@ yaGPC2 (--start flag) for the authoritative encoding. Also verify the
 LA R1,A relocation target lands on #LSQRT's placement.
 
 Trace: cargo run --bin lazap-trace -- roms/nasa/SQRTRUN.fcm
+
+## ✓ FIRST FLIGHT ROUTINE RESURRECTED (same session, later)
+
+SQRT computed sqrt(2.0) = 0x4116A09E — EXACT to the last bit.
+The bug was in lnk_lite, not the flight code and not the emulator:
+ASM101S adcons are CSECT-CHAIN-relative (they already include the
+target CSECT's ESD-declared offset within its module), so the fixup is
+placed_base - chain_offset (ESD bytes 9-12). With that, the 1970s
+algorithm produced the ideal IBM hexfloat on the first run. Also:
+DC F'0' fullword-aligns, so RESULT sits at driver+0xE.
+
+Test: nasa_flight_sqrt_computes_sqrt2 (no longer ignored).
+Recipe now proven for the other 201 assembled routines.

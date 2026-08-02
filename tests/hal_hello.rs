@@ -136,14 +136,14 @@ fn asm101s_assembled_program_runs() {
 /// passes) — assembled by the real ASM101S, called by a driver via
 /// BAL 4 with the AEXIT frame convention, computing sqrt(2.0).
 #[test]
-#[ignore = "flight SQRT runs its full algorithm and returns; R1-based constant fetch lands wrong (SRS scaling vs ASM101S emission — see roms/nasa/CENSUS.md)"]
 fn nasa_flight_sqrt_computes_sqrt2() {
     let bytes = std::fs::read("/tmp/SQRTRUN.fcm").or_else(|_| std::fs::read("roms/nasa/SQRTRUN.fcm")).unwrap();
     let mut cpu = Cpu::new(Memory::full());
     fcm::boot(&mut cpu, &bytes, Some(r#"{"entryPoint": 256}"#)).unwrap();
     let mut ucp = HalUcp::new(u32::MAX >> 1, 0, 0, 0);
     let r = run_hal(&mut cpu, &mut ucp, 100_000);
-    let result = cpu.mem.read_f(0x10D).unwrap();
+    // DC F'0' fullword-aligns: TWO at 0x10B-C, RESULT at 0x10E.
+    let result = cpu.mem.read_f(0x10E).unwrap();
     println!("r={r:?} ic={:04X} RESULT={result:08X}", cpu.psw.ic);
     let expect = 0x4116A09Eu32; // sqrt(2) in IBM hex float
     assert!(result.abs_diff(expect) <= 2, "sqrt(2): {result:08X} vs {expect:08X}");

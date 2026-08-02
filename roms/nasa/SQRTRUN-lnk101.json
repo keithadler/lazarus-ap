@@ -1,1 +1,1 @@
-{"entryPoint": 256, "sections": [], "symbols": []}
+{"entryPoint": 256, "sections": [], "symbols": [], "repro": {"tool": "lnk_lite --standalone"}}
