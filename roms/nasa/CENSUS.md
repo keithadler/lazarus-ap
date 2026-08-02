@@ -141,3 +141,11 @@ Matrices are stored row-major as nine consecutive fullwords, same
 one-fullword-before pointer convention. MM6S3 is the transform at the
 heart of attitude work: every rotation the orbiter computed passed
 through a routine shaped like this one.
+| VX6S3 | CROSS PRODUCT | R2,R3 in, R1 out (intrinsic) | x-hat X y-hat | [0,0,1] right-hand rule |
+| MM14S3 | 3x3 MATRIX INVERSE | R4 in, R2 out; ACALL; needs MM12S3+MM15SN | diag(2,4,5) | diag(0.5,0.25,0.2) |
+
+MM14S3 is the routine behind the documented ON-ERROR quirk: its
+singular-matrix error (group 4, number 27) is the one error the
+compiler never re-checks at the call site, so it can never dispatch to
+a user handler - it falls through to MM15SN's identity-matrix fallback
+instead. Our halucp implements that exact exclusion.

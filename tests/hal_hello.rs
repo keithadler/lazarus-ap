@@ -284,6 +284,19 @@ fn nasa_flight_vector_math() {
         want.iter().map(|v| *v as i32).collect::<Vec<_>>(),
         "matrix multiply"
     );
+    // cross product: x-hat X y-hat = z-hat (right-hand rule)
+    let cpu = run("roms/nasa/VX6RUN.fcm");
+    let cross: Vec<f64> = (0..3).map(|i| f(&cpu, 0x120 + 2 * i)).collect();
+    assert_eq!(cross, vec![0.0, 0.0, 1.0], "cross product");
+    // 3x3 matrix inverse: diag(2,4,5) -> diag(0.5, 0.25, 0.2)
+    let cpu = run("roms/nasa/MM14RUN.fcm");
+    for (i, want) in [(0usize, 0.5), (4, 0.25), (8, 0.2)] {
+        assert!((f(&cpu, 0x122 + 2 * i as u32) - want).abs() < 1e-5,
+                "inverse[{i}]");
+    }
+    for i in [1usize, 2, 3, 5, 6, 7] {
+        assert_eq!(f(&cpu, 0x122 + 2 * i as u32), 0.0, "off-diagonal {i}");
+    }
     // unit vector of [3,4,0] = [0.6, 0.8, 0]
     let cpu = run("roms/nasa/VV10RUN.fcm");
     assert!((f(&cpu, 0x116) - 0.6).abs() < 1e-5, "unit x");
