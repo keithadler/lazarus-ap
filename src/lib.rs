@@ -25,6 +25,7 @@ pub mod halucp;
 pub mod iop;
 pub mod mem;
 pub mod psw;
+pub mod subsystems;
 pub mod trace;
 #[cfg(target_arch = "wasm32")]
 pub mod wasm;
