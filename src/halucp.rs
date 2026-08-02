@@ -717,8 +717,21 @@ pub enum HalRun {
 /// no-ops in this core subset (the SVC has no PSA handler installed, so
 /// skipping the failed swap and continuing IS the no-op).
 pub fn run_hal(cpu: &mut Cpu, ucp: &mut HalUcp, max_steps: usize) -> HalRun {
+    run_hal_traced(cpu, ucp, max_steps, |_, _, _| {})
+}
+
+/// `run_hal` with a per-step observer (called before each step with the
+/// CPU, the UCP, and the 19-bit next-instruction address) — the hook the
+/// trace generator uses.
+pub fn run_hal_traced(
+    cpu: &mut Cpu,
+    ucp: &mut HalUcp,
+    max_steps: usize,
+    mut observe: impl FnMut(&Cpu, &HalUcp, u32),
+) -> HalRun {
     for _ in 0..max_steps {
         let nia = cpu.expand_branch(cpu.psw.ic);
+        observe(cpu, ucp, nia);
         ucp.check_trap(cpu, nia);
         match cpu.step() {
             Ok(_) => {}
