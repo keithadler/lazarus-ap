@@ -92,3 +92,20 @@ fn read_write_parity() {
     assert_eq!(run_hal(&mut cpu, &mut ucp, 3_000_000), HalRun::Done);
     assert_eq!(ucp.output, golden);
 }
+
+/// The closed loop: LAZARUS.hal was written for this project, compiled
+/// by the real HAL/S-FC (release 32V0, all seven passes built from the
+/// restored XPL source), linked by our tools/lnk_lite.py against the
+/// hello fixture's runtime layout, and runs here.
+#[test]
+fn our_own_hal_s_program_runs() {
+    let bytes = std::fs::read("roms/lazarus/LAZARUS.fcm").unwrap();
+    let json = std::fs::read_to_string("roms/lazarus/LAZARUS-lnk101.json").unwrap();
+    let mut cpu = Cpu::new(Memory::full());
+    fcm::boot(&mut cpu, &bytes, Some(&json)).unwrap();
+    let mut ucp = HalUcp::from_symbols_json(&json).unwrap();
+    assert_eq!(run_hal(&mut cpu, &mut ucp, 3_000_000), HalRun::Done);
+    assert!(ucp.output.starts_with("LAZARUS AP LIVES\n"));
+    assert!(ucp.output.ends_with("SET IS GO\n"));
+    assert_eq!(ucp.output.matches("GPC VOTE              42").count(), 3);
+}
