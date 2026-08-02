@@ -9,6 +9,8 @@
 body{background:var(--ground);color:var(--ink);margin:0;padding:20px;
  font:15px/1.6 Georgia,serif}
 .mono{font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+.wb{background:var(--accent);color:var(--accent-ink);padding:1px 6px;border-radius:2px;font-size:11px}
+.wb.lib{background:#B4791A;color:#0F1113}
 .wrap{max-width:940px;margin:0 auto}
 h1{font-size:22px;font-weight:400;margin:0 0 6px}
 .sub{color:var(--dim);font-size:14px;margin:0 0 18px}
@@ -65,6 +67,8 @@ executing here: 228&nbsp;KB of machine, running real flight-compiler output.
     <table class="mono" id="regs"></table>
     <p class="note">Address <b class="mono" id="ic"></b> &middot; next <b class="mono" id="mn"></b>
     &middot; condition code <b class="mono" id="cc"></b></p>
+    <p class="note">In routine <b class="mono wb" id="where">&mdash;</b>
+    <span id="wnote" style="color:var(--dim)"></span></p>
   </section>
 </div>
 
@@ -124,6 +128,23 @@ executing here: 228&nbsp;KB of machine, running real flight-compiler output.
 <p class="note">Built with <span class="mono">cargo build --target wasm32-unknown-unknown
 --release</span> &mdash; no JavaScript framework, no bundler, no dependencies.</p>
 </div>
+<section class="panel" style="margin-top:14px">
+  <p class="placard">What this is, and what it is not</p>
+  <p class="note">Everything above is really executing: a cited emulation of the
+  IBM AP-101S, running images built by the Shuttle's own compiler and assembler.
+  The routine badge in the machine-state panel is read from the linker's own
+  section table, so it names the actual routine the processor is inside.</p>
+  <p class="note">What is <b>not</b> here: the primary flight software. The
+  orbiter's ascent, entry and autopilot code &mdash; roughly 400,000 lines &mdash;
+  has never been publicly released. What runs here is the runtime library those
+  programs called, plus a redundancy mechanism reconstructed from documentation,
+  not NASA's own voting code. There is no cycle-accurate clock, so nothing here
+  says whether work would have fitted in a 40&nbsp;Hz frame.</p>
+  <p class="note">39 flight routines are re-checked against modern mathematics on
+  every build. The full accounting is in
+  <a href="index.html#notyet">the resource page</a>.</p>
+</section>
+
 <script>
 const dec = new TextDecoder(), enc = new TextEncoder();
 let M, X, timer = null, vtimer = null, prev = null;
@@ -140,8 +161,9 @@ let CAT = null, station = 0;
 const KEYS = [['0',0],['1',1],['2',2],['3',3],['4',4],['5',5],['6',6],['7',7],
   ['8',8],['9',9],['A',10],['B',11],['C',12],['D',13],['E',14],['F',15],
   ['+',16],['-',17],['.',18],['OPS',19],['SPEC',20],['ITEM',21],['EXEC',22],['PRO',23]];
+let PROG = null;
 function bootNamed(i){
-  const p = CAT.programs[i];
+  const p = CAT.programs[i]; PROG = p;
   writeBuf(b64(p.b64)); X.boot(p.entry, p.ioinit, p.intrap, p.iocode, p.iobuf);
   prev = null; render();
   document.getElementById('status').textContent = p.blurb;
@@ -248,6 +270,22 @@ function render(){
   document.getElementById('out').textContent = out || '(no output yet)';
   document.getElementById('ic').textContent = s.ic.toString(16).toUpperCase().padStart(5,'0');
   document.getElementById('mn').textContent = s.m;
+  // Which routine owns the address the processor is actually at, read
+  // from the linker's section table for the loaded program.
+  const wb = document.getElementById('where'), wn = document.getElementById('wnote');
+  const secs = PROG && PROG.sections;
+  if (secs){
+    let lo = 0, hi = secs.length - 1, hit = null;
+    while (lo <= hi){ const m = (lo + hi) >> 1;
+      if (s.ic < secs[m][0]) hi = m - 1;
+      else if (s.ic >= secs[m][1]) lo = m + 1;
+      else { hit = secs[m][2]; break; } }
+    const own = hit && PROG.own.indexOf(hit) !== -1;
+    wb.textContent = hit || '(unmapped)';
+    wb.className = 'mono wb' + (hit && !own ? ' lib' : '');
+    wn.innerHTML = !hit ? '' : own ? '&mdash; this program'
+      : PROG.own.length ? '&mdash; NASA flight runtime' : '';
+  }
   document.getElementById('cc').textContent = ['zero','positive','&mdash;','negative'][s.cc];
   document.getElementById('status').textContent = s.done ? 'program complete' : 'running';
   let h = '';

@@ -146,3 +146,31 @@ for the yaGPC2-compatible path.
 - Fragmentary BFS source (OI34.01) is publicly available and worth
   studying; running PASS/full BFS depends on ITAR status and is
   explicitly out of scope until that changes.
+
+## What survives, and what has to be rebuilt
+
+As of 2026-08-02 the historical toolchain is no longer present on the
+build machine. HALSFC, ASM101S, XCOM-I and the Virtual AGC tree were
+built under a temporary directory that has since been cleared; a
+full-filesystem search finds none of them. The recipe above still
+works, but it is a rebuild, not a reattach.
+
+This matters for what can and cannot be regenerated today:
+
+| Artifact | Status |
+|---|---|
+| `.fcm` images, `.obj` decks, `-lnk101.json` tables | committed — the resurrection stands on these alone |
+| `hello.srcmap.json` (HAL/S statement map) | committed for the hello fixture only |
+| Statement maps for any other program | **not regenerable** without rebuilding HALSFC |
+| `176-P.obj` | never committed; only its linked image and symbol table survive |
+
+Two consequences are visible in the resource page. The source
+walkthrough can follow HELLO line by line because its statement map was
+captured, but can only follow LAZARUS and 176-P by routine. And 176-P
+carries no claim about which routines are its own versus the linker's,
+because the object deck that would settle it is gone.
+
+The practical lesson, already paid for once (see DEFECTS.md LAZARUS-2):
+commit the build's metadata at the moment it is produced, and check that
+it belongs to the thing it ships with. Symbol tables are now verified
+against their object decks in CI by `tools/check_symtabs.py`.
