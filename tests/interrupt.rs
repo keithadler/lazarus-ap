@@ -174,3 +174,68 @@ fn interrupt_can_switch_register_sets() {
     assert_eq!(c.r(1), 0, "handler sees the alternate set");
     assert_eq!(c.gpr[0][1], 0x8000_0000, "interrupted set preserved");
 }
+
+#[test]
+fn system_interrupts_pend_while_masked() {
+    // §2.5.2.3: system interrupts remain pending when masked and are
+    // taken at ENDOP once the mask allows; §2.5.4: the wait state is
+    // interruptible.
+    let mut c = cpu8k();
+    install_psw(&mut c, 0x8C, 0x0300); // external 2 (IOP programmed)
+    c.pending_system[4] = true; // ext 2, mask bit 37
+    // masked (sys_mask 0): pending survives an instruction
+    run_at(&mut c, 0x100, &[0b00000_001_11100_010], 1); // AR
+    assert!(c.pending_system[4], "stays pending while masked");
+    assert_eq!(c.psw.ic, 0x101);
+    // unmask bit 37 (0x04): the next ENDOP takes it
+    c.psw.sys_mask = 0x04;
+    run_at(&mut c, 0x200, &[0b00000_001_11100_010], 1);
+    assert_eq!(c.psw.ic, 0x0300, "delivered once unmasked");
+    assert!(!c.pending_system[4]);
+    let old = c.mem.read_f(0x88).unwrap();
+    assert_eq!(old >> 16, 0x0201, "old PSW resumes after the instruction");
+}
+
+#[test]
+fn wait_state_is_interruptible() {
+    use lazarus_ap::Halt;
+    let mut c = cpu8k();
+    install_psw(&mut c, 0x7C, 0x0300); // external 0
+    c.psw.wait = true;
+    c.psw.sys_mask = 0x10; // bit 35 unmasked
+    c.pending_system[2] = true;
+    c.mem.load_halfwords(0x300, &[0b10111_001_1110_1111]).unwrap(); // LFXI 1,13
+    let halt = c.run(5);
+    assert_eq!(c.r(1), 0x000D_0000, "woke from wait and ran the handler");
+    assert!(!matches!(halt, Halt::Wait));
+    // masked: stays waiting
+    let mut c = cpu8k();
+    install_psw(&mut c, 0x7C, 0x0300);
+    c.psw.wait = true;
+    c.pending_system[2] = true;
+    assert_eq!(c.run(5), Halt::Wait);
+}
+
+#[test]
+fn cpu_drives_iop_over_pc() {
+    use lazarus_ap::iop::Iop;
+    // End-to-end: supervisor code issues PROCESSOR ENABLE then reads the
+    // halt status back — the CPU/IOP seam working over the real PC
+    // instruction (§3.3 + Appendix I command words).
+    let mut c = cpu8k();
+    c.io = Some(Box::new(Iop::new()));
+    // R2 = PCO PROCESSOR ENABLE, R4 = PCI PROCESSOR HALT STATUS
+    c.set_r(2, 0x8720_0000);
+    c.set_r(4, 0x040C_0000);
+    run_at(
+        &mut c,
+        0x100,
+        &[
+            0b11011_001_11101_010, // PC 1,2 (output: enable)
+            0b11011_011_11101_100, // PC 3,4 (input: halt status -> R3)
+        ],
+        2,
+    );
+    assert_eq!(c.psw.cc, CC_ZERO, "handshake succeeded");
+    assert_eq!(c.r(3), 0, "IOP reports not halted after PROCESSOR ENABLE");
+}

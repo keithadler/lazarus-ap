@@ -17,6 +17,7 @@ pub mod asm;
 pub mod cpu;
 pub mod decode;
 pub mod float;
+pub mod iop;
 pub mod mem;
 pub mod psw;
 pub mod trace;

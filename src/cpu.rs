@@ -21,6 +21,19 @@ pub mod psa {
     /// Instruction monitor (CPU breakpoint), Figure 2-20.
     pub const MONITOR_OLD: u32 = 0x0070;
     pub const MONITOR_NEW: u32 = 0x0074;
+    /// System-class interrupt levels (§2.5.2, Figure 2-20/2-21):
+    /// (old PSW, new PSW, PSW system-mask bit as a mask over bits 32-39).
+    /// In mask-bit order — the lowest-numbered bit is taken first
+    /// (§2.5.2 item 5).
+    pub const SYSTEM_LEVELS: [(u32, u32, u8); 7] = [
+        (0x0060, 0x0064, 0x80), // counter/interval timer 1 (bit 32)
+        (0x0068, 0x006C, 0x40), // interval timer 2 (bit 33)
+        (0x0078, 0x007C, 0x10), // external 0 (bit 35)
+        (0x0080, 0x0084, 0x08), // external 1 (bit 36)
+        (0x0088, 0x008C, 0x04), // external 2 — IOP programmed (bit 37)
+        (0x0090, 0x0094, 0x02), // external 3 (bit 38)
+        (0x0098, 0x009C, 0x01), // external 4 (bit 39)
+    ];
 }
 
 /// Program-exception interrupt codes (§2.5.2 Figure 2-20).
@@ -88,6 +101,10 @@ pub struct Cpu {
     /// attached, PC operations time out (CC 01) — architecturally the
     /// handshake never completes.
     pub io: Option<Box<dyn IoSubsystem>>,
+    /// Pending system-class interrupts, one per `psa::SYSTEM_LEVELS`
+    /// entry. System interrupts remain pending while masked (§2.5.2.3)
+    /// and are taken at ENDOP when their mask bit allows.
+    pub pending_system: [bool; 7],
 }
 
 impl Default for Cpu {
@@ -132,6 +149,7 @@ impl Cpu {
             dse: [[0; 8]; 2],
             steps: 0,
             io: None,
+            pending_system: [false; 7],
         }
     }
 
@@ -557,8 +575,23 @@ impl Cpu {
         if self.psw.overflow && self.psw.fixed_overflow_mask {
             self.program_interrupt(pe_code::FIXED_OVERFLOW, at)?;
         }
+        self.deliver_system_interrupts(at)?;
         self.steps += 1;
         Ok(at)
+    }
+
+    /// Take pending unmasked system interrupts at ENDOP, lowest mask-bit
+    /// number first (§2.5.2). Masked levels stay pending. The interrupt
+    /// code for external levels is delivered as 0000 (Figure 2-20).
+    pub fn deliver_system_interrupts(&mut self, at: u32) -> Result<(), Trap> {
+        for (i, (old, new, mask)) in psa::SYSTEM_LEVELS.iter().enumerate() {
+            if self.pending_system[i] && self.psw.sys_mask & mask != 0 {
+                self.pending_system[i] = false;
+                self.psw.int_code = 0x0000;
+                self.psw_swap(*old, *new, at)?;
+            }
+        }
+        Ok(())
     }
 
     /// Run until a halt condition. A taken branch that targets itself
@@ -566,7 +599,15 @@ impl Cpu {
     pub fn run(&mut self, max_steps: u64) -> Halt {
         for _ in 0..max_steps {
             if self.psw.wait {
-                return Halt::Wait;
+                // §2.5.4: the wait state is interruptible when not masked.
+                let at = self.expand_branch(self.psw.ic);
+                match self.deliver_system_interrupts(at) {
+                    Ok(()) => {}
+                    Err(t) => return Halt::Trap(t),
+                }
+                if self.psw.wait {
+                    return Halt::Wait;
+                }
             }
             let before = self.psw.ic;
             match self.step() {
