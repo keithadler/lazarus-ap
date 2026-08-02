@@ -1,12 +1,77 @@
 name: CI
+
 on:
   push:
   pull_request:
+
 jobs:
   test:
+    name: Emulator test suite
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo build --all-targets
       - run: cargo test
+
+  parity:
+    name: Byte parity with the reference emulator
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # Each fixture's output must match the golden captured from a
+      # locally-built yaGPC2, byte for byte.
+      - name: HAL/S programs
+        run: |
+          set -e
+          diff <(cargo run -q --bin lazap -- roms/hello/hello.fcm) roms/hello/golden.txt
+          diff <(cargo run -q --bin lazap -- roms/p176/176-P.fcm --steps 3000000) roms/p176/golden.txt
+          echo "42, 3.14" | diff <(cargo run -q --bin lazap -- roms/read_write/read_write.fcm) roms/read_write/golden.txt
+          diff <(cargo run -q --bin lazap -- roms/read_eof/read_eof_onerror.fcm < /dev/null) roms/read_eof/golden.txt
+      - name: Our own compiled HAL/S program still runs
+        run: cargo run -q --bin lazap -- roms/lazarus/LAZARUS.fcm | grep -q "LAZARUS AP LIVES"
+
+  flight-math:
+    name: NASA flight routines still compute
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      # The linked images are committed, so the flight mathematics is
+      # verifiable without rebuilding the historical toolchain.
+      - name: Scalar library
+        run: |
+          set -e
+          check() {
+            got=$(cargo run -q --bin lazap-call -- "$1" --at "$2" | awk '{print $3}')
+            python3 -c "import sys; a=float(sys.argv[1]); b=float(sys.argv[2]); sys.exit(0 if abs(a-b) < 2e-6*max(1,abs(b)) else 1)" "$got" "$3"
+            echo "$1 -> $got (want $3) OK"
+          }
+          check roms/nasa/SQRTRUN.fcm 10E 1.4142136
+          check roms/nasa/EXPRUN.fcm  10E 2.7182818
+          check roms/nasa/LOGRUN.fcm  10E 0.6931472
+      - name: Vector and matrix suite
+        run: |
+          set -e
+          dot=$(cargo run -q --bin lazap-call -- roms/nasa/VV6RUN.fcm --at 11E | awk '{print $3}')
+          [ "$dot" = "32" ]
+          det=$(cargo run -q --bin lazap-call -- roms/nasa/MM12RUN.fcm --at 120 | awk '{print $3}')
+          [ "$det" = "24" ]
+          ux=$(cargo run -q --bin lazap-call -- roms/nasa/VV10RUN.fcm --at 116 | awk '{print $3}')
+          python3 -c "import sys; sys.exit(0 if abs(float(sys.argv[1])-0.6)<1e-5 else 1)" "$ux"
+          echo "dot=$dot det=$det unit_x=$ux"
+
+  pages:
+    name: The resource page is self-contained
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # GitHub Pages serves docs/index.html directly; it must have no
+      # external requests and no stray entity text.
+      - run: |
+          set -e
+          test -f docs/index.html
+          ! grep -qE '<(script|link|img)[^>]+(src|href)="https?:' docs/index.html
+          ! grep -qE '&(mdash|rsquo|middot);' <(grep -oE "textContent = [^;]+" docs/index.html || true)
+          echo "docs/index.html: self-contained, $(wc -c < docs/index.html) bytes"
