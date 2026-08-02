@@ -91,11 +91,16 @@ spec. Remaining:
 
 ## Phase 6 — flight software (legal-path dependent) — NEXT
 
-Scouting notes for the toolchain-compatibility work: yaGPC2 has no
-dedicated object-file loader module (its mcm.c/halucp.c handle memory
-images); the object-deck tooling lives separately in the Virtual AGC
-tree (ASM101S assembler, lnk101 linker, ibmobjdump viewer) — read
-those to learn the AP-101S object format before writing ours.
+FCM loading works (src/fcm.rs): the Virtual AGC Shuttle toolchain is
+HALSFC (HAL/S compiler) -> lnk101 (linker) -> .fcm memory image + a
+symbols JSON carrying the entry point; yaGPC2 loads the image at
+address 0 and starts the PSW at the entry (verified against its
+ageharness.c/mcm.c). Lazarus AP now boots the same way. Remaining for
+real HAL/S artifacts: the halucp layer (host-side interception of the
+HAL/S runtime's WRITE/FILE SVCs using the symbol table) and validation
+against an actual HALSFC/lnk101-built .fcm — the earlier ASM101S/
+ibmobjdump note was wrong; no separate object-deck tooling is needed
+for the yaGPC2-compatible path.
 
 - Object-code compatibility with the Virtual AGC toolchain (ASM101S,
   lnk101) so their artifacts run here.
