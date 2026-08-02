@@ -42,7 +42,16 @@ is I/O-dependent (PC, ICR, DIAG); interrupt round-trip tests pass.
 - Bus abstraction designed for *multiple* bus controllers/listeners from
   day one — this is the seam phase 4 plugs into.
 
-## Phase 4 — the redundant set (the new ground)
+## Phase 4 — the redundant set (the new ground) — FIRST MILESTONE REACHED
+
+Working today (tests/redundant_set.rs): four complete GPCs (CPU + IOP)
+running one identical software image — CPU compute/poll/vote code, MSC
+sequencer, BCE bus programs, configured only by GPC id — exchange
+computed values over a shared serial-bus fabric via App. III §4 listen
+mode and independently vote. An injected sensor fault on one GPC is
+flagged by all three healthy machines (and the sick machine shows the
+classic votes-against-the-world signature); a killed GPC fail-silences
+without disturbing the others. Remaining for full phase 4:
 
 - N `Cpu` instances (target 4 PASS + 1 BFS-style listener) with:
   - inter-computer communication (ICC) buses,

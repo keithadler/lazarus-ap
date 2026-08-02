@@ -52,9 +52,15 @@ impl std::fmt::Display for AsmError {
 pub struct Program {
     pub chunks: Vec<(u16, Vec<u16>)>,
     pub entry: u16,
+    /// Label -> halfword address, for tests that poke program data.
+    pub labels: HashMap<String, u16>,
 }
 
 impl Program {
+    pub fn label(&self, name: &str) -> Option<u32> {
+        self.labels.get(name).map(|&a| a as u32)
+    }
+
     pub fn load(&self, mem: &mut crate::mem::Memory) -> Result<(), crate::mem::AddressError> {
         for (addr, words) in &self.chunks {
             mem.load_halfwords(*addr as u32, words)?;
@@ -488,7 +494,7 @@ pub fn assemble(src: &str) -> Result<Program, AsmError> {
             _ => chunks.push((st.addr, words)),
         }
     }
-    Ok(Program { chunks, entry: entry.unwrap_or(0) })
+    Ok(Program { chunks, entry: entry.unwrap_or(0), labels })
 }
 
 fn strip_suffixes(mn: &str) -> (String, bool, bool) {
