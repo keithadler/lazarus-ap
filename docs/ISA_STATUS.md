@@ -221,7 +221,12 @@ with automatic storage modification (Figure 2-15).
   check, system/external, and interval-timer interrupts are not (I/O
   phases).
 - Storage protection and the instruction monitor are modeled (above).
-- Timing (§16-§17) is not modeled; this is an instruction-level emulator.
+- Timing: per-instruction execution times ARE modelled (src/timing.rs),
+  but they do not come from §17. They come from the HAL/S-FC compiler's
+  own `EXECUTION_TIMES` table in `PASS2.PROCS/OBJECTGE.xpl`. The unit is
+  **UNVERIFIED** — the compiler printed bare numbers; microseconds is a
+  conventional assumption this project has not confirmed against §17.
+  Cross-checking the table against §16-§17 remains open.
 
 ## UNVERIFIED / open questions
 

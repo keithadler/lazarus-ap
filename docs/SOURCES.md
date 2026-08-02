@@ -68,7 +68,12 @@ What it confirmed (sections cited in code/docs):
 - **§14.1**: automatic index alignment (halfword/fullword/doubleword), and
   the LM/STM/LPS/ISPB halfword-alignment exception.
 - **§16**: pipeline behavior (background only; not modeled).
-- **§17**: instruction execution times (not modeled in phase 1).
+- **§17**: instruction execution times. Not yet read directly. The
+  timing model instead uses the HAL/S-FC compiler's own
+  `EXECUTION_TIMES` procedure (`PASS.REL32V0/PASS2.PROCS/OBJECTGE.xpl`),
+  with the compiler-private INST index reconstructed to mnemonics by
+  Virtual AGC's `yaShuttle/yaGPC2/src/timing.c`. Confirming those
+  numbers, and their unit, against §17 is outstanding.
 
 ### [2] Virtual AGC project — Space Shuttle pages
 
