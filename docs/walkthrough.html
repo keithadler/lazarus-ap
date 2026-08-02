@@ -121,12 +121,21 @@ h2.sect{font-size:22px;font-weight:400;margin:0 0 14px}
   working.</p>
   <button id="cta">&#9654;&nbsp; Watch the run</button>
 </div></div>
+<div class="wrap"><a class="srcbar" href="https://github.com/keithadler/lazarus-ap">
+  <b>&lt;/&gt;&nbsp; Read the source on GitHub</b>
+  <span>The emulator, the tools, the recovered flight code and the defect
+  report &mdash; all of it, open. GPL&nbsp;v2.</span></a></div>
 <div class="wrap"><a class="livebar" href="https://claude.ai/code/artifact/a57abad3-1398-4d1e-9676-e9f7e398e97d">
   <b>&#9654; Run the emulator yourself, right now</b>
   <span>The AP-101S compiled to WebAssembly &mdash; 228&nbsp;KB of Space Shuttle
   computer executing in your browser. Step through real flight code, run the
   five-computer vote, no install.</span></a></div>
 <style>
+.srcbar{display:block;border:1px solid var(--line);color:var(--ink);text-decoration:none;
+  padding:13px 16px;border-radius:3px;margin-bottom:10px;background:var(--panel)}
+.srcbar b{display:block;font-size:14px;letter-spacing:.02em;margin-bottom:3px}
+.srcbar span{display:block;font-size:12.5px;color:var(--dim);line-height:1.5}
+.srcbar:hover{border-color:var(--accent)}
 .livebar{display:block;background:var(--accent);color:var(--accent-ink);text-decoration:none;
   border-radius:3px;padding:14px 18px;margin:0 0 26px}
 .livebar b{display:block;font:700 15px/1.5 system-ui,sans-serif;margin-bottom:3px}
@@ -902,7 +911,17 @@ h2.sect{font-size:22px;font-weight:400;margin:0 0 14px}
   <p style="max-width:72ch;margin:0 0 14px">Everything on this page is a program you
   can run. The emulator is one Rust project; the historical toolchain is Python. No
   network, no accounts, no cloud &mdash; the whole Shuttle computing world fits in a
-  repository.</p>
+  repository &mdash; <a href="https://github.com/keithadler/lazarus-ap" style="color:var(--accent)">this one</a>.</p>
+  <div class="getit">
+    <p class="placard">Start here</p>
+    <pre class="mono">git clone https://github.com/keithadler/lazarus-ap.git
+cd lazarus-ap
+cargo test                          # 194 tests
+cargo run --bin lazap -- roms/hello/hello.fcm</pre>
+  </div>
+  <style>.getit{border:1px solid var(--line);border-radius:3px;padding:14px 16px;
+    margin:0 0 18px;background:var(--panel);overflow-x:auto}
+  .getit pre{margin:0;font-size:13px;line-height:1.7}</style>
   <div class="panel" style="margin-bottom:14px">
     <p class="placard">Watch and explore</p>
     <pre class="cmd">cargo run --bin lazap-dps          <span class="c"># crew station: type at the DPS keyboard, watch the CRT</span>
