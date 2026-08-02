@@ -10,7 +10,7 @@ runtime library, HAL/S programs compiled by the actual Space Shuttle
 compiler, and five emulated computers voting against each other the way
 the orbiter's did.
 
-▶ **[The interactive resource](docs/index.html)** — narrated execution,
+▶ **[Read it here](https://keithadler.github.io/lazarus-ap/)** ([source](docs/index.html)) — narrated execution,
 source stepped against the machine code it compiled to, the five-computer
 vote, the crew keyboard and CRT, the flight math, the history, and a
 defect report. One self-contained page; serves from GitHub Pages

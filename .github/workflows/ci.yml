@@ -74,7 +74,11 @@ jobs:
       - run: |
           set -e
           test -f docs/index.html
-          ! grep -qE '<(script|link|img)[^>]+(src|href)="https?:' docs/index.html
+          python3 tools/mkpage.py --check
+          # No external *resource* loads. rel=canonical and the Open Graph
+          # image URL are metadata, not fetches, so they are excluded.
+          ! grep -E '<(script|img)[^>]+src="https?:' docs/index.html
+          ! grep -E '<link[^>]+href="https?:' docs/index.html | grep -qv 'rel="canonical"'
           ! grep -qE '&(mdash|rsquo|middot);' <(grep -oE "textContent = [^;]+" docs/index.html || true)
           echo "docs/index.html: self-contained, $(wc -c < docs/index.html) bytes"
 
