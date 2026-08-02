@@ -251,3 +251,33 @@ fn nasa_flight_wave2() {
         assert!((v - expect).abs() < 1e-5, "{name}: {v} vs {expect}");
     }
 }
+
+/// The vector suite — the mathematics that actually pointed the
+/// orbiter. VV6S3 is the dot product (two vector pointers in R2/R3);
+/// VV10S3 is UNIT VECTOR, normalizing through the flight SQRT.
+#[test]
+fn nasa_flight_vector_math() {
+    let f = |cpu: &Cpu, at: u32| {
+        let u = lazarus_ap::float::unpack_short(cpu.mem.read_f(at).unwrap());
+        if u.is_zero() { 0.0 } else {
+            let m = u.frac as f64 * (16f64).powi(u.ch - 78);
+            if u.neg { -m } else { m }
+        }
+    };
+    let run = |path: &str| {
+        let bytes = std::fs::read(path).unwrap();
+        let mut cpu = Cpu::new(Memory::full());
+        fcm::boot(&mut cpu, &bytes, Some(r#"{"entryPoint": 256}"#)).unwrap();
+        let mut ucp = HalUcp::new(u32::MAX >> 1, 0, 0, 0);
+        assert_eq!(run_hal(&mut cpu, &mut ucp, 200_000), HalRun::Done, "{path}");
+        cpu
+    };
+    // dot product [1,2,3]·[4,5,6] = 32
+    let cpu = run("roms/nasa/VV6RUN.fcm");
+    assert!((f(&cpu, 0x11E) - 32.0).abs() < 1e-5, "dot product");
+    // unit vector of [3,4,0] = [0.6, 0.8, 0]
+    let cpu = run("roms/nasa/VV10RUN.fcm");
+    assert!((f(&cpu, 0x116) - 0.6).abs() < 1e-5, "unit x");
+    assert!((f(&cpu, 0x118) - 0.8).abs() < 1e-5, "unit y");
+    assert_eq!(f(&cpu, 0x11A), 0.0, "unit z");
+}

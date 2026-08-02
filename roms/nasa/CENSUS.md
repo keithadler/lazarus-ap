@@ -123,3 +123,15 @@ entries; a card can hold 3), so enumerating entries in parse order can
 drift from the assembler's ESDIDs. Fix: read each ESD card's `esdid`
 field (bytes 14-15 = the ID of its FIRST entry) and number entries from
 there, rather than a global running counter.
+
+## The vector suite reached (the code that actually flew)
+
+| Routine | What it is | Convention | Input | Answer |
+|---|---|---|---|---|
+| VV6S3 | dot product | R2, R3 = vector ptrs (one fullword before), F0 out | [1,2,3]·[4,5,6] | 32 exact |
+| VV10S3 | UNIT VECTOR | R4 = in ptr, R2 = out ptr; ACALL; needs VV0SN + SQRT | [3,4,0] | [0.6, 0.8, 0] |
+
+Vector elements sit at displacements 2/4/6 off the pointer, so the
+pointer again addresses one fullword before element 1 - the same
+pre-increment convention the array routines use. VV10S3 normalizes by
+calling the flight SQRT: pointing math, all the way down.
