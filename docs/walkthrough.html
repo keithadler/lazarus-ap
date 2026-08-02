@@ -404,6 +404,99 @@ h2.sect{font-size:22px;font-weight:400;margin:0 0 14px}
   };
   kgo(0);
   </script>
+  <h2 class="sect" id="bugs">Defect report &mdash; filed against a retired spacecraft</h2>
+  <p style="max-width:72ch;margin:0 0 16px">Bringing this software back means running
+  it against a modern reading of its own documentation, and that turns up
+  discrepancies. Below is what forty-five-year-old flight code looks like under a
+  fresh set of eyes, written the way you would file it today. Two of these are the
+  original engineers&rsquo; own admissions &mdash; printed in the manuals, in capital
+  letters. One is a live defect in a recovered tool. And one, in fairness, was mine.</p>
+
+  <div class="bug">
+    <p class="bughdr"><b>AP-101S-1</b> &middot; Floating-point COMPARE reports false
+    equality <span class="sev">SEVERITY: HIGH (as flown)</span></p>
+    <p><b>Component</b> Central processing unit, floating-point compare (CE/CER/CED/CEDR).<br>
+    <b>Status</b> Documented by IBM. Not a discovery &mdash; an admission, printed in
+    the Principles of Operation under the heading ANOMALY NOTE.<br>
+    <b>Description</b> Two unequal numbers compare <i>equal</i> when their fractions
+    differ by exactly X&rsquo;80 0000&rsquo; after prealignment. The manual gives three
+    worked examples of its own hardware getting the wrong answer, e.g. operands
+    <span class="mono">423F FFFF 0000 1234</span> and
+    <span class="mono">423F FFFF 0080 1234</span> return &ldquo;equal&rdquo; where the
+    correct result is &ldquo;less than&rdquo;.<br>
+    <b>Impact</b> Any flight code branching on the equality of two nearly-identical
+    scalars can take the wrong branch. Guidance software compares magnitudes constantly.<br>
+    <b>Reproduce</b> Load the manual&rsquo;s own operand pairs and execute a CED. (Our
+    emulator deliberately computes the <i>correct</i> answer &mdash; the anomaly is
+    catalogued, not replicated, and that choice is recorded in ISA_STATUS.md.)<br>
+    <b>Workaround</b> Compare against a tolerance rather than for equality &mdash;
+    which is what careful numerical code does anyway.</p>
+  </div>
+
+  <div class="bug">
+    <p class="bughdr"><b>AP-101S-2</b> &middot; Long DIVIDE silently loses half its
+    precision <span class="sev">SEVERITY: MEDIUM</span></p>
+    <p><b>Component</b> CPU, double-precision divide (DED/DEDR).<br>
+    <b>Status</b> Documented by IBM, cause not characterized.<br>
+    <b>Description</b> Verbatim: under certain conditions the quotient is accurate to
+    only <b>29 of its 56 fraction bits</b> &mdash; and the manual states plainly that
+    it is &ldquo;not feasible to characterize these conditions&rdquo;, advising that
+    long divide simply not be used where more than 29 bits matter.<br>
+    <b>Impact</b> Silent precision loss in double-precision division, with no
+    indication to the program. A navigation filter dividing large covariances could
+    lose accuracy invisibly.<br>
+    <b>Reproduce</b> Not reproducible on demand &mdash; that is the defect.<br>
+    <b>Workaround</b> The manual&rsquo;s own: avoid long divide when precision matters.</p>
+  </div>
+
+  <div class="bug">
+    <p class="bughdr"><b>ASM101S-1</b> &middot; Three flight routines no longer
+    assemble <span class="sev">SEVERITY: MEDIUM (tooling)</span></p>
+    <p><b>Component</b> ASM101S assembler (the recovered modern port), macro library.<br>
+    <b>Found</b> Census of the flight runtime, August 2026: <b>202 of 205</b> routines
+    assemble cleanly; three do not.<br>
+    <b>Failing</b> <span class="mono">CSTRUC</span> (2 errors),
+    <span class="mono">VV8D3</span>, <span class="mono">VV8S3</span> (1 each).<br>
+    <b>Diagnostic</b> <span class="mono">(Pass -1, Severity 4) INVALID CC OPERAND FOR
+    INTRINSIC</span> &mdash; raised by the AEXIT macro when an intrinsic returns a
+    condition code. VV8S3&rsquo;s own header declares <span class="mono">OUTPUT CC</span>,
+    so the source and the macro library disagree about whether that is legal.<br>
+    <b>Impact</b> Those three routines cannot be rebuilt from source today. They ran
+    for thirty years; the loss is in the tooling, not the flight code.<br>
+    <b>Reproduce</b> <span class="mono">ASM101S.py --library VV8S3.asm</span><br>
+    <b>Suspected cause</b> A macro-library version skew between the recovered RUNMAC
+    macros and the routines that use them &mdash; not yet confirmed.</p>
+  </div>
+
+  <div class="bug" style="border-left-color:var(--dim)">
+    <p class="bughdr"><b>LAZARUS-1</b> &middot; Emulator dropped the first halfword of
+    every block move <span class="sev" style="background:var(--dim)">SEVERITY: HIGH &middot; FIXED</span></p>
+    <p><b>Component</b> Our AP-101S emulator, MVH instruction.<br>
+    <b>Found by</b> A Shuttle physics program, which printed a garbage acceleration
+    while its two neighbouring components were bit-exact.<br>
+    <b>Cause</b> Figure 9-1 of the Principles of Operation does not state whether the
+    move count decrements before or after each transfer. We guessed after; the
+    hardware decrements first. Every block copy silently lost element zero &mdash;
+    which, in the HAL/S runtime&rsquo;s constant table, was the high half of the
+    number 0.1.<br>
+    <b>Impact</b> Any program using a copied constant got a wrong value with no error
+    indication. Exactly the class of defect that voting computers exist to catch.<br>
+    <b>Reproduce</b> Historical: <span class="mono">git show f24b937</span>.<br>
+    <b>Resolution</b> Fixed, with a regression test; the diagnosis is written up in
+    the repository. Filed here because a resurrection that only lists other
+    people&rsquo;s bugs is not being honest.</p>
+  </div>
+  <p class="hint" style="margin:0 0 40px">Should anyone fly an AP-101S again, items 1
+  and 2 are still open, and were open the whole time it flew.</p>
+  <style>
+  .bug{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--amber);
+    border-radius:0 6px 6px 0;padding:14px 18px;margin:0 0 12px}
+  .bug p{margin:0;font-size:15px;max-width:74ch}
+  .bughdr{font-family:ui-monospace,Menlo,monospace;font-size:14px;margin-bottom:8px !important}
+  .sev{float:right;background:var(--amber);color:#1A1408;border-radius:3px;
+    padding:1px 8px;font:700 10.5px/1.6 system-ui,sans-serif;letter-spacing:.06em}
+  @media(max-width:620px){.sev{float:none;display:inline-block;margin-top:4px}}
+  </style>
   <h2 class="sect">The people</h2>
   <div class="cards">
     <div class="card"><h3>The language builders</h3>
