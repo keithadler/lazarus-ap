@@ -178,23 +178,28 @@ def standalone(argv):
     argv = [a for a in argv if a not in ("--standalone", "-o")]
     obj_path, out_fcm = argv
     modules = parse_deck(obj_path)
-    # place SDs sequentially (fullword-aligned), across all modules
+    # Place each MODULE contiguously, honoring its CSECTs' declared
+    # chain offsets (ESD bytes 9-12): a module's adcons are
+    # chain-relative, so its internal layout must be preserved.
     addr = org
-    placement = []  # per-module dict esdid->addr
+    placement = []
     top = org
     for mod in modules:
         addr_of = {}
+        span = 0
         for i, esd in enumerate(mod["esds"], start=1):
-            if esd["kind"] == "SD":
-                addr_of[i] = addr
-                length_hw = max(
-                    (t["addr"] + t["size"] + 1) // 2
-                    for t in mod["txt"]
-                    if t["esdid"] == i
-                ) if any(t["esdid"] == i for t in mod["txt"]) else 0
-                addr += (length_hw + 1) & ~1
-                top = max(top, addr)
+            if esd["kind"] != "SD":
+                continue
+            off_hw = esd["addr"] // 2
+            addr_of[i] = addr + off_hw
+            end = off_hw + max(
+                ((t["addr"] + t["size"] + 1) // 2 for t in mod["txt"] if t["esdid"] == i),
+                default=0,
+            )
+            span = max(span, end)
         placement.append(addr_of)
+        addr += (span + 1) & ~1
+        top = max(top, addr)
     # resolve ERs against SD names across modules
     names = {}
     for mod, addr_of in zip(modules, placement):

@@ -79,3 +79,24 @@ genuine ACALL sequence - DC X'D0FF' (SCAL 0) + Y(#Qname+X'3800')
 through a hand-built Figure 2-17 stub (Y(entry) + X'0E00'), returning
 via SRET. Driver template: EXP_DRV.asm; swap EXTRN/entry/argument.
 195 more routines await the same treatment.
+
+## Wave 2 (SINH/TANH/ACOS/ASINH/ATANH) — linked, one linker bug away
+
+Dependency-closed drivers now build automatically: the tool reads each
+census deck's #Q externals, walks the closure (SINH->EXP,
+ASINH->SQRT+LOG), emits one #Q stub CSECT per LIB callee, assembles,
+concatenates every deck, and links. All five produce images.
+
+lnk_lite also now places each MODULE contiguously honoring its CSECTs'
+declared chain offsets (ESD bytes 9-12) instead of scattering them -
+required as soon as a module has more than one CSECT.
+
+REMAINING BUG: in the driver deck, the stub's `DC Y(SINH)` relocates to
+the module base (0x0100) instead of SINH's placed address (0x0164), so
+SCAL loops back into the driver. Since the same relocation works for
+single-CSECT decks, the suspect is ESDID->entry mapping in parse_deck:
+ESD cards may carry blank/continuation slots (size field counts 16-byte
+entries; a card can hold 3), so enumerating entries in parse order can
+drift from the assembler's ESDIDs. Fix: read each ESD card's `esdid`
+field (bytes 14-15 = the ID of its FIRST entry) and number entries from
+there, rather than a global running counter.

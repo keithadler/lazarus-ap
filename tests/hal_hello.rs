@@ -220,3 +220,35 @@ fn nasa_flight_log_and_tan() {
         assert!((v - expect).abs() < 1e-6, "{name}: {v} vs {expect}");
     }
 }
+
+/// Wave 2: five more flight routines, with real dependency chains
+/// (SINH calls the flight EXP; ASINH calls flight SQRT and LOG...).
+#[test]
+#[ignore = "wave-2 chains: stub adcon relocates to the module base, not the callee — ESDID mapping in lnk_lite (see roms/nasa/CENSUS.md)"]
+fn nasa_flight_wave2() {
+    let to_f = |w: u32| {
+        let u = lazarus_ap::float::unpack_short(w);
+        if u.is_zero() { 0.0 } else {
+            let m = u.frac as f64 * (16f64).powi(u.ch - 78);
+            if u.neg { -m } else { m }
+        }
+    };
+    for (fcm, expect, name) in [
+        ("roms/nasa/SINHRUN.fcm", 1.0f64.sinh(), "sinh(1)"),
+        ("roms/nasa/TANHRUN.fcm", 1.0f64.tanh(), "tanh(1)"),
+        ("roms/nasa/ACOSRUN.fcm", 0.5f64.acos(), "acos(0.5)"),
+        ("roms/nasa/ASINHRUN.fcm", 1.0f64.asinh(), "asinh(1)"),
+        ("roms/nasa/ATANHRUN.fcm", 0.5f64.atanh(), "atanh(0.5)"),
+    ] {
+        let bytes = std::fs::read(fcm).unwrap();
+        let mut cpu = Cpu::new(Memory::full());
+        fcm::boot(&mut cpu, &bytes, Some(r#"{"entryPoint": 256}"#)).unwrap();
+        let mut ucp = HalUcp::new(u32::MAX >> 1, 0, 0, 0);
+        let r = run_hal(&mut cpu, &mut ucp, 400_000);
+        let w = cpu.mem.read_f(0x10E).unwrap();
+        let v = to_f(w);
+        println!("{name}: r={r:?} {w:08X} = {v} (expect {expect})");
+        assert_eq!(r, HalRun::Done, "{name}");
+        assert!((v - expect).abs() < 1e-5, "{name}: {v} vs {expect}");
+    }
+}
