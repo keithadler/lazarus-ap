@@ -124,7 +124,7 @@ h2.sect{font-size:22px;font-weight:400;margin:0 0 14px}
 <div class="wrap"><div class="paths">
   <a href="#console"><b>New to this?</b><span>Watch a real 1970s space computer run, one step at a time, with plain-English narration.</span></a>
   <a href="#vote"><b>Curious how spacecraft don&rsquo;t crash</b><span>Five computers, one bad answer, and the vote that catches it.</span></a>
-  <a href="#lab"><b>Programmer</b><span>Genuine flight routines executing, compared against modern math &mdash; and the toolchain that runs them.</span></a>
+  <a href="#job"><b>Programmer</b><span>Genuine flight routines executing, compared against modern math &mdash; and the toolchain that runs them.</span></a>
   <a href="#bugs"><b>Historian / engineer</b><span>Sourced conventions, a defect report, and every claim traced to IBM&rsquo;s own manual.</span></a>
 </div></div>
 <style>
@@ -298,6 +298,51 @@ h2.sect{font-size:22px;font-weight:400;margin:0 0 14px}
       an emulator like this one is now, as far as we know, the only place these
       instructions still run.</p></div>
   </div>
+  <h2 class="sect" id="job">What this software actually did</h2>
+  <p style="max-width:72ch;margin:0 0 16px">The routines on this page are pieces of a
+  much larger job. The Shuttle&rsquo;s primary flight software &mdash; about
+  <b>400,000 lines</b> of HAL/S and assembly &mdash; was not one program but a set of
+  them, and the crew switched between them in flight by typing
+  <span class="mono">OPS</span> numbers on the keyboard you saw above. Each
+  &ldquo;operational sequence&rdquo; loaded the software for one phase of the mission,
+  because a megabyte of memory could not hold the whole flight at once.</p>
+  <div class="opsgrid">
+    <div class="ops"><b>OPS 1 &middot; Ascent</b><span>From solid-rocket ignition to
+    orbit insertion: steering the stack through max-Q, throttling the main engines,
+    separating boosters and tank, and flying the abort options if an engine
+    failed. Eight and a half minutes, no second chances.</span></div>
+    <div class="ops"><b>OPS 2 &middot; On orbit</b><span>Attitude control with the
+    RCS jets, pointing for experiments and communications, star-tracker alignments
+    of the inertial platform, rendezvous and proximity operations. This is where the
+    vector and matrix routines earn their keep.</span></div>
+    <div class="ops"><b>OPS 3 &middot; Entry and landing</b><span>The deorbit burn,
+    then guidance through a hypersonic glide &mdash; energy management, roll
+    reversals, autoland to the runway. The orbiter flew as a 100-ton glider with one
+    attempt at the runway.</span></div>
+    <div class="ops"><b>OPS 8/9 &middot; Systems &amp; ground</b><span>Systems
+    management, payload operations, checkout on the ground before flight, and the
+    fault-detection displays the crew called up when something rang an alarm.</span></div>
+  </div>
+  <p style="max-width:72ch;margin:14px 0 0">Underneath all of it ran the same
+  machinery you have been watching: the computers voting, the crew typing at DEU
+  keyboards, and the runtime library doing the arithmetic. When guidance needed the
+  angle between the orbiter&rsquo;s nose and its velocity vector, it called a dot
+  product. When it needed a pure heading, it normalized. When it composed one frame
+  of reference into another, it multiplied 3&times;3 matrices. Those exact routines run
+  again in the table below &mdash; not a re-creation, the code itself.</p>
+  <p class="hint" style="margin:10px 0 40px">Ambition worth stating plainly: the
+  Shuttle&rsquo;s complete flight software is not public, and much of it never will
+  be. What survives &mdash; the compiler, the assembler, the runtime library, the
+  computer&rsquo;s own manual &mdash; is what this project has resurrected, and it is
+  enough to run real programs on a faithful machine.</p>
+  <style>
+  .opsgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px}
+  .ops{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--accent);
+    border-radius:0 3px 3px 0;padding:13px 15px}
+  .ops b{display:block;font:700 12.5px/1.5 system-ui,sans-serif;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--accent);margin-bottom:5px}
+  .ops span{font-size:14.5px;line-height:1.55}
+  </style>
   <h2 class="sect" id="lab">The flight math lab</h2>
   <p style="max-width:70ch;margin:0 0 14px">The Shuttle&rsquo;s runtime library
   survives as original AP-101S assembly &mdash; <b>205 routines</b>, of which 202
@@ -621,7 +666,7 @@ cargo test                          <span class="c"># 191 tests: every instructi
     let b = VBEATS[0];
     for(const bb of VBEATS){ if(vi >= bb[0]) b = bb; }
     document.getElementById('vch').innerHTML = b[1];
-    document.getElementById('vp').textContent = b[2];
+    document.getElementById('vp').innerHTML = b[2];
     let h = '';
     gs.forEach((g, gi)=>{
       const [boxes, verdict, dead] = g;
@@ -725,9 +770,9 @@ function render(){
   scrub.value = i;
   const bi = beatOf(i), b = BEATS[bi];
   document.getElementById('narr-ch').innerHTML = b.ch;
-  document.getElementById('narr-p').textContent = b.t;
+  document.getElementById('narr-p').innerHTML = b.t;
   [...chBox.children].forEach((c,k)=>c.classList.toggle('on',k===bi));
-  document.getElementById('now').textContent =
+  document.getElementById('now').innerHTML =
     m + ' &mdash; ' + (EXPLAIN[m] || 'a machine housekeeping step');
   const lo = Math.max(0, i-5), hi = Math.min(N, i+8);
   let rows = '';
