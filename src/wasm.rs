@@ -142,6 +142,13 @@ pub extern "C" fn output() {
     buf_put(&text);
 }
 
+/// Write one halfword of main storage — used to place simulated sensor
+/// readings where a flight program expects them.
+#[no_mangle]
+pub extern "C" fn poke(addr: u32, value: u32) {
+    single().cpu.mem.write_h(addr, value as u16).ok();
+}
+
 /// Read one halfword of main storage (for inspecting results).
 #[no_mangle]
 pub extern "C" fn peek(addr: u32) -> u32 {

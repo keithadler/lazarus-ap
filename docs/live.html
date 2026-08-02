@@ -105,6 +105,22 @@ executing here: 228&nbsp;KB of machine, running real flight-compiler output.
   <div class="gpcs" id="crts"></div>
   <div id="kbd" style="display:grid;grid-template-columns:repeat(8,1fr);gap:4px;margin-top:10px"></div>
 </section>
+
+<section class="panel" style="margin-top:14px">
+  <p class="placard">Guidance &mdash; NASA flight math on a sensor reading you choose</p>
+  <p class="note" style="margin:0 0 10px">Set a direction. The Shuttle&rsquo;s own
+  UNIT&nbsp;VECTOR routine normalises it (reaching through VV0SN into the flight
+  SQRT), then its dot product measures the angle to the reference axis
+  <span class="mono">+X</span>. The reading is simulated; every instruction that
+  processes it is recovered NASA code.</p>
+  <div class="controls" style="margin:0 0 8px">
+    <label class="mono" style="font-size:13px">X <input id="vx" type="number" value="3" step="1" style="width:5em"></label>
+    <label class="mono" style="font-size:13px">Y <input id="vy" type="number" value="3" step="1" style="width:5em"></label>
+    <label class="mono" style="font-size:13px">Z <input id="vz" type="number" value="0" step="1" style="width:5em"></label>
+    <button class="p" id="attrun">Compute</button>
+  </div>
+  <div class="crt mono" id="attout" style="min-height:78px">set a direction and press Compute</div>
+</section>
 <p class="note">Built with <span class="mono">cargo build --target wasm32-unknown-unknown
 --release</span> &mdash; no JavaScript framework, no bundler, no dependencies.</p>
 </div>
@@ -179,6 +195,38 @@ function renderCrew(){
 [0,1,2].forEach(n=>{ document.getElementById('st'+n).onclick = ()=>{ station = n;
   [0,1,2].forEach(m=>document.getElementById('st'+m).className = m===n?'p':'');
   renderCrew(); }; });
+
+
+function toIBM(v){
+  if (v === 0) return [0,0];
+  let av = Math.abs(v), ch = 64;
+  while (av >= 1) { av /= 16; ch++; }
+  while (av < 1/16) { av *= 16; ch--; }
+  const w = ((v<0?1:0)<<31 | (ch & 0x7F)<<24 | (Math.floor(av * (1<<24)) & 0xFFFFFF))>>>0;
+  return [w>>>16, w & 0xFFFF];
+}
+function fromIBM(w){
+  const neg = w>>>31, ch = (w>>>24)&0x7F, frac = w & 0xFFFFFF;
+  return frac===0 ? 0 : (neg?-1:1) * frac * Math.pow(16, ch-64-6);
+}
+document.getElementById('attrun').onclick = ()=>{
+  const a = CAT.attitude;
+  const v = ['vx','vy','vz'].map(id=>parseFloat(document.getElementById(id).value)||0);
+  writeBuf(b64(a.b64)); X.boot(256, 0, 0, 0, 0);
+  v.forEach((x,i)=>{ const [hi,lo] = toIBM(x);
+    X.poke(a.vec + i*2, hi); X.poke(a.vec + i*2 + 1, lo); });
+  X.step(400000);
+  const w = ((X.peek(a.result)<<16) | X.peek(a.result+1))>>>0;
+  const cos = fromIBM(w);
+  const deg = Math.acos(Math.max(-1, Math.min(1, cos))) * 180 / Math.PI;
+  const mag = Math.hypot(...v);
+  document.getElementById('attout').textContent =
+    `sensor reading   (${v.join(', ')})   magnitude ${mag.toFixed(4)}\n` +
+    `VV10S3 normalise -> unit vector\n` +
+    `VV6S3  dot with +X reference\n` +
+    `\ncos = ${cos.toFixed(7)}   (0x${w.toString(16).toUpperCase().padStart(8,'0')})` +
+    `   =  ${deg.toFixed(2)} degrees off axis`;
+};
 
 async function main(){
   const wasm = await fetch('wasm/lazarus_ap.wasm').then(r=>r.arrayBuffer());
