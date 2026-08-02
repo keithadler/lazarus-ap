@@ -59,13 +59,49 @@ Documented deviations/choices:
   host to route to a CPU external interrupt; the level-encoding page
   needs a better read.
 
-## Staged (encodings catalogued, execution NOT implemented)
+## BCE execution engine — implemented
 
-BCE instruction set (App. III §3: #LTO/#RIB/#SIB/#SSC/#SST/#LBR/#BU/
-#WIX/#CMD/#TDS/#TDL/#MOUT/#RDS/#RDL/#MIN etc.) and the bus/listen-mode
-model (App. III §4) — the transmit/receive layer and the multi-GPC
-seam. Encodings recorded from the yaGPC2 cross-check; per-page reads
-(App. III pages III-30..III-88) come first, as with the MSC.
+The App. III §3 instruction set executes from the per-instruction pages
+(III-30..III-77), encodings cross-checked against yaGPC2: register ops
+(#LTOI/#LTO, #RIB/#SIB, #SSC/#SST, #LBR), branching (#BU, #WIX with the
+listen-command table lookup), transmit (#CMDI/#CMD with the IUAR rule
+and the no-error-on-disabled quirk, #TDS, #TDLI/#TDL, #MOUT in both
+formats incl. the per-BCE table form), receive (#RDS, #RDLI/#RDL, #MIN)
+with the Table 1.2 validity checks (sync errors, SEV pattern with
+inverted-S/V recording, IUA signature mismatch with the ORed-in
+address), and #WAT/#STP/#DLYI/#DLY. Direct modes apply the automatic
+2×BCE-number table indexing (p. III-11). Error termination follows the
+manual: status bits + program-exception + BCE-MSC indicator + Wait
+State.
+
+**The bus fabric** (`BusWord`, `BusFabric`, `LocalBuses`): 24-bit
+information words with command/data sync per Figure 1.1, including the
+BCE-to-BCE listen-command format. A two-GPC test drives the full §4
+listen-mode sequence — commander's #CMDI caught by a listener's #WIX,
+table branch, then #TDS→#RDS data transfer across GPC memory spaces.
+This is the seam the phase-4 redundant set plugs into.
+
+Deviations/choices (all deliberate, revisit with timing):
+- Timeouts: MTO timing is unmodeled; an exhausted receive queue records
+  INITIAL_TIMEOUT/TIMEOUT. Gap errors (21.5 µs / 5 µs) cannot occur.
+- Transfers are atomic per instruction step; the hardware interleaves
+  at 16.5 µs granularity. `Iop::step` = one MSC + one instruction per
+  busy BCE, mirroring the time-shared design (§1.3).
+- The MIA-busy condition never holds (transmission is instantaneous),
+  so #CMDI's retry cycle and #CMD's skip are only reachable via the
+  transmitter-enable bit.
+- Status-register low fields (parity/signature/SEV positions) are
+  partially illegible in the scan; positions chosen are in
+  `bce_status` with the SEV inverted-S/V rule implemented as described.
+- PCO MIA XMTR/RCVR ENABLE/DISABLE take the data word as a register
+  bit-mask (the App. I detail pages for those data words remain
+  unread — PARTIAL).
+
+## Staged
+
+BCE 25 (self-test), listen-mode §4.2-4.3 fine print, MSC/BCE local
+store via PCI/PCO LS commands (data-select formats p. I-28+), DMA
+timing, and the §17 execution-time model.
 
 ## Not yet modeled
 

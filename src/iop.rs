@@ -23,6 +23,85 @@
 //! never fabricates instruction behavior.
 
 use crate::cpu::{IoSubsystem, PcResponse};
+use std::collections::VecDeque;
+
+/// One word on a serial data bus (App. III §1.1.1): 28 bits on the wire —
+/// 3 sync, 24 information, 1 parity. Parity is modeled as always good;
+/// the sync type distinguishes commands from data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct BusWord {
+    pub cmd_sync: bool,
+    /// The 24 information bits (wire bits 3-26).
+    pub info: u32,
+}
+
+impl BusWord {
+    /// Data word from a BCE (Figure 1.1(a)): IUA in info bits 0-4, 16
+    /// data bits in 8-23 (info bits 5-20), SEV pattern 101 in the tail.
+    pub fn data(iua: u8, data: u16) -> BusWord {
+        BusWord {
+            cmd_sync: false,
+            info: ((iua as u32 & 0x1F) << 19) | ((data as u32) << 3) | 0b101,
+        }
+    }
+
+    pub fn command(cmd24: u32) -> BusWord {
+        BusWord { cmd_sync: true, info: cmd24 & 0x00FF_FFFF }
+    }
+
+    /// Listen command (Figure 1.1(d)): common IOP address 01000 in info
+    /// bits 0-4, target IUA in info bits 11-15, branch-table index in
+    /// info bits 16-23 (§1.1.1, #WIX p. III-38).
+    pub fn listen(iua: u8, index: u8) -> BusWord {
+        BusWord {
+            cmd_sync: true,
+            info: (0b01000 << 19) | ((iua as u32 & 0x1F) << 8) | index as u32,
+        }
+    }
+}
+
+/// The serial-bus fabric a GPC's 24 MIAs attach to. This is the seam for
+/// the multi-GPC redundant set: a shared fabric routes one GPC's
+/// transmissions into other GPCs' receive queues (listen mode, App. III
+/// §4). `LocalBuses` is the single-GPC implementation.
+pub trait BusFabric {
+    /// Put a word on bus `bus` (0-23) from this GPC's transmitter.
+    fn transmit(&mut self, bus: usize, w: BusWord);
+    /// Next word available to this GPC's receiver on bus `bus`.
+    fn receive(&mut self, bus: usize) -> Option<BusWord>;
+}
+
+/// Single-GPC fabric: records transmissions, delivers injected words.
+pub struct LocalBuses {
+    pub sent: Vec<(usize, BusWord)>,
+    pub rx: Vec<VecDeque<BusWord>>,
+}
+
+impl Default for LocalBuses {
+    fn default() -> LocalBuses {
+        LocalBuses { sent: Vec::new(), rx: (0..NUM_BCES).map(|_| VecDeque::new()).collect() }
+    }
+}
+
+impl LocalBuses {
+    pub fn new() -> LocalBuses {
+        LocalBuses::default()
+    }
+
+    pub fn inject(&mut self, bus: usize, w: BusWord) {
+        self.rx[bus].push_back(w);
+    }
+}
+
+impl BusFabric for LocalBuses {
+    fn transmit(&mut self, bus: usize, w: BusWord) {
+        self.sent.push((bus, w));
+    }
+
+    fn receive(&mut self, bus: usize) -> Option<BusWord> {
+        self.rx[bus].pop_front()
+    }
+}
 
 /// Master Sequence Controller register state (App. II §1.2): a 32-bit
 /// accumulator, an 18-bit index register, and an 18-bit program counter
@@ -45,6 +124,17 @@ pub struct Bce {
     pub busy: bool,
     /// BCE indicator bit (set/reset by BCE #SIB/#RIB and MSC @RBI).
     pub indicator: bool,
+    /// Maximum Time Out register (§1.2.1); units of 16.5 µs on the
+    /// hardware. Timing is not modeled: an empty receive queue counts as
+    /// an immediate timeout.
+    pub mto: u32,
+    /// Interface Unit Address register (5 bits, §1.2.1): the subsystem
+    /// this BCE last commanded; receive checks inputs against it.
+    pub iuar: u8,
+    /// BCE status register (Table 1.2, `bce_status` bit constants).
+    pub status: u32,
+    /// Program-exception state (STAT1): true = an error was recorded.
+    pub error: bool,
 }
 
 pub const NUM_BCES: usize = 24;
@@ -86,14 +176,36 @@ pub mod msc_status {
     pub const SIO_ERR: u32 = 1 << 6;
 }
 
+/// BCE status-register bits (App. III Table 1.2, IBM bit b = value bit
+/// 31-b). The parity/signature/SEV low-field positions in the scan are
+/// partially illegible; the choices here are recorded in IOP_STATUS.md.
+pub mod bce_status {
+    pub const ILLEGAL: u32 = 1 << 2; // IBM bit 29
+    pub const BOUNDARY: u32 = 1 << 3; // 28
+    pub const BLOCK_TIMEOUT: u32 = 1 << 4; // 27
+    pub const TIMEOUT: u32 = 1 << 5; // 26
+    pub const INITIAL_TIMEOUT: u32 = 1 << 6; // 25
+    pub const XMT_DISABLED: u32 = 1 << 8; // 23
+    pub const GAP: u32 = 1 << 10; // 21
+    pub const SYNC_ERROR: u32 = 1 << 16; // 15
+    /// SEV-pattern field (IBM bits 9-11).
+    pub const SEV: u32 = 0b111 << 20;
+    /// Signature (IUA) mismatch flag; the offending IUA is also ORed
+    /// into IBM bits 8-12.
+    pub const SIG_MISMATCH: u32 = 1 << 24;
+}
+
 pub struct Iop {
     pub msc: Msc,
     pub bces: Vec<Bce>,
     /// Interrupt registers A-E (App. I "READ INTERRUPT REG." commands).
     pub interrupt_regs: [u32; 5],
-    /// MIA transmitter/receiver enables (App. I p. I-4).
-    pub mia_xmtr_enabled: bool,
-    pub mia_rcvr_enabled: bool,
+    /// MIA transmitter/receiver enable registers: IBM bit i = BCE/MIA i
+    /// (App. III §1.2.2; changed only by CPU PCOs). The PCO data-word
+    /// format page is thin — the data word is taken as the new register
+    /// value (PARTIAL, see IOP_STATUS.md).
+    pub mia_xmtr_enable: u32,
+    pub mia_rcvr_enable: u32,
     /// Discrete output register.
     pub discrete_out: bool,
     /// PROCESSOR HALT / PROCESSOR ENABLE state (App. I p. I-4): halted
@@ -124,8 +236,8 @@ impl Default for Iop {
             msc: Msc::default(),
             bces: vec![Bce::default(); NUM_BCES],
             interrupt_regs: [0; 5],
-            mia_xmtr_enabled: false,
-            mia_rcvr_enabled: false,
+            mia_xmtr_enable: 0,
+            mia_rcvr_enable: 0,
             discrete_out: false,
             halted: true,
             interrupts_enabled: false,
@@ -158,14 +270,345 @@ impl Iop {
         v
     }
 
-    /// Advance the IOP by one MSC instruction (App. II §3). BCE program
-    /// execution is the next increment. No-op when halted or the MSC is
-    /// not busy.
-    pub fn step(&mut self, mem: &mut crate::mem::Memory) {
-        if self.halted || !self.msc.busy {
+    /// Advance the IOP one time slice: the MSC executes one instruction
+    /// (if busy) and every busy BCE executes one instruction. This
+    /// mirrors the time-shared implementation (App. III §1.3: each
+    /// processor gets a microinstruction slot every 16.5 µs). No-op when
+    /// PROCESSOR HALT is in effect.
+    pub fn step(&mut self, mem: &mut crate::mem::Memory, buses: &mut dyn BusFabric) {
+        if self.halted {
             return;
         }
-        self.step_msc(mem);
+        if self.msc.busy {
+            self.step_msc(mem);
+        }
+        for n in 0..NUM_BCES {
+            if self.bces[n].busy {
+                self.step_bce(n, mem, buses);
+            }
+        }
+    }
+
+    fn xmtr_enabled(&self, n: usize) -> bool {
+        self.mia_xmtr_enable & (1 << (31 - n)) != 0
+    }
+
+    fn rcvr_enabled(&self, n: usize) -> bool {
+        self.mia_rcvr_enable & (1 << (31 - n)) != 0
+    }
+
+    /// Error-terminate a BCE instruction (App. III §2/#RDS pages): status
+    /// bits recorded, program-exception state set, BCE-MSC indicator
+    /// raised, Wait State entered.
+    fn bce_error(&mut self, n: usize, bits: u32) {
+        let b = &mut self.bces[n];
+        b.status |= bits;
+        b.error = true;
+        b.indicator = true;
+        b.busy = false;
+        self.indicators |= 1 << (31 - (n as u32 + 1));
+    }
+
+    /// One BCE instruction (App. III §3). `n` is the zero-based index;
+    /// the architectural BCE number (used in direct-mode table indexing,
+    /// p. III-11) is n+1.
+    fn step_bce(&mut self, n: usize, mem: &mut crate::mem::Memory, buses: &mut dyn BusFabric) {
+        let num = n as u32 + 1;
+        let pc = self.bces[n].pc & 0x3FFFF;
+        let hw1 = mem.read_h(pc).unwrap_or(0) as u32;
+        let hw2 = mem.read_h(pc.wrapping_add(1) & 0x3FFFF).unwrap_or(0) as u32;
+        let op4 = hw1 >> 12;
+        let top5 = hw1 >> 11;
+        let disp11 = hw1 & 0x7FF;
+
+        // Long-format instructions must sit on fullword boundaries
+        // (Table 1.2 boundary-alignment error).
+        if op4 == 0xF && pc & 1 != 0 {
+            self.bce_error(n, bce_status::BOUNDARY);
+            return;
+        }
+
+        match () {
+            // #WAT (§3.5): enter the Wait State.
+            _ if top5 == 0b00001 => {
+                self.bces[n].pc = pc.wrapping_add(1) & 0x3FFFF;
+                self.bces[n].busy = false;
+            }
+            // #STP (§3.5): stop.
+            _ if op4 == 0b0001 => {
+                self.bces[n].pc = pc.wrapping_add(1) & 0x3FFFF;
+                self.bces[n].busy = false;
+            }
+            // #WIX (p. III-38): in listen mode (transmitter disabled),
+            // wait for a Listen Command and branch through the table at
+            // updated-PC + disp (rounded to even). With the transmitter
+            // enabled, behaves as #WAT.
+            _ if top5 == 0b00100 => {
+                if self.xmtr_enabled(n) {
+                    self.bces[n].pc = pc.wrapping_add(1) & 0x3FFFF;
+                    self.bces[n].busy = false;
+                    return;
+                }
+                if !self.rcvr_enabled(n) {
+                    return; // nothing can arrive; keep monitoring
+                }
+                match buses.receive(n) {
+                    Some(w) if w.cmd_sync && w.info >> 19 == 0b01000 => {
+                        let iua = ((w.info >> 8) & 0x1F) as u8;
+                        let index = w.info & 0xFF;
+                        let table = (pc.wrapping_add(1).wrapping_add(disp11) + 1) & !1;
+                        let target = mem
+                            .read_f((table + 2 * index) & 0x3FFFF)
+                            .unwrap_or(0);
+                        self.bces[n].iuar = iua;
+                        self.bces[n].pc = target & 0x3FFFF;
+                    }
+                    // Not a listen command, or nothing yet: keep looping
+                    // at this instruction (the hardware's tight loop).
+                    _ => {}
+                }
+            }
+            // #SSC / #SST (p. III-33/34): store status (M bit indexes by
+            // twice the BCE number); #SSC then clears it.
+            _ if op4 == 0b0100 || op4 == 0b0101 => {
+                let m = hw1 & 0x0800 != 0;
+                let d = if disp11 & 0x400 != 0 { disp11 | !0x7FF } else { disp11 };
+                let mut ea = pc.wrapping_add(1).wrapping_add(d) & 0x3FFFF;
+                if m {
+                    ea = ea.wrapping_add(2 * num) & 0x3FFFF;
+                }
+                let st = self.bces[n].status;
+                let _ = mem.write_f(ea & !1, st);
+                self.bces[n].pc = pc.wrapping_add(1) & 0x3FFFF;
+                if op4 == 0b0100 {
+                    self.bces[n].status = 0;
+                    self.bces[n].error = false;
+                }
+            }
+            // #TDS (p. III-51): transmit count+1 halfwords from
+            // base+disp8.
+            _ if hw1 >> 13 == 0b100 && top5 != 0b10110 && top5 != 0b10111 => {
+                let count = ((hw1 >> 8) & 0x1F) + 1;
+                let start = self.bces[n].base.wrapping_add(hw1 & 0xFF) & 0x3FFFF;
+                self.transmit_data(n, mem, buses, start, count, 1);
+            }
+            // #RDS (p. III-71): receive count+1 halfwords into
+            // base+disp8.
+            _ if hw1 >> 13 == 0b011 => {
+                let count = ((hw1 >> 8) & 0x1F) + 1;
+                let start = self.bces[n].base.wrapping_add(hw1 & 0xFF) & 0x3FFFF;
+                self.receive_data(n, mem, buses, start, count, 1);
+            }
+            // #LTOI / #LTO (p. III-30): load the MTO register.
+            _ if top5 == 0b10110 => {
+                self.bces[n].mto = disp11;
+                self.bces[n].pc = pc.wrapping_add(1) & 0x3FFFF;
+            }
+            _ if top5 == 0b10111 => {
+                let d = if disp11 & 0x400 != 0 { disp11 | !0x7FF } else { disp11 };
+                let ea = pc
+                    .wrapping_add(1)
+                    .wrapping_add(d)
+                    .wrapping_add(2 * num)
+                    & 0x3FFFF;
+                self.bces[n].mto = mem.read_f(ea & !1).unwrap_or(0) & 0x3FFFF;
+                self.bces[n].pc = pc.wrapping_add(1) & 0x3FFFF;
+            }
+            // #DLYI / #DLY (§3.5): timed delays; timing unmodeled.
+            _ if top5 == 0b11000 || top5 == 0b11001 => {
+                self.bces[n].pc = pc.wrapping_add(1) & 0x3FFFF;
+            }
+            // #RIB / #SIB (p. III-31/32).
+            _ if top5 == 0b11100 || top5 == 0b11101 => {
+                let set = top5 == 0b11101;
+                self.bces[n].indicator = set;
+                let bit = 1u32 << (31 - num);
+                if set {
+                    self.indicators |= bit;
+                } else {
+                    self.indicators &= !bit;
+                }
+                self.bces[n].pc = pc.wrapping_add(1) & 0x3FFFF;
+            }
+            // Long formats.
+            _ if op4 == 0xF => {
+                let m = hw1 & 0x0800 != 0;
+                let op3 = (hw1 >> 8) & 7;
+                let val18 = ((hw1 & 3) << 16) | hw2;
+                // Direct mode resolves through memory with automatic
+                // indexing by twice the BCE number (p. III-11).
+                let resolve = |mem: &crate::mem::Memory, v: u32| -> u32 {
+                    mem.read_f((v.wrapping_add(2 * num) & 0x3FFFF) & !1).unwrap_or(0)
+                };
+                match op3 {
+                    0b000 => {
+                        // #BU
+                        let t = if m { resolve(mem, val18) } else { val18 };
+                        self.bces[n].pc = t & 0x3FFFF;
+                    }
+                    0b010 => {
+                        // #LBR
+                        let v = if m { resolve(mem, val18) } else { val18 };
+                        self.bces[n].base = v & 0x3FFFF;
+                        self.bces[n].pc = pc.wrapping_add(2) & 0x3FFFF;
+                    }
+                    0b110 => {
+                        // #CMDI / #CMD (p. III-49): transmit a 24-bit
+                        // command; IUAR gets its top 5 bits. Disabled
+                        // transmitter or busy MIA: no action, no error.
+                        let cmd = if m {
+                            resolve(mem, val18) & 0x00FF_FFFF
+                        } else {
+                            (((hw1 >> 3) & 0x1F) << 19) | ((hw1 & 7) << 16) | hw2
+                        };
+                        if !m || self.xmtr_enabled(n) {
+                            self.bces[n].iuar = (cmd >> 19) as u8 & 0x1F;
+                        }
+                        if self.xmtr_enabled(n) {
+                            buses.transmit(n, BusWord::command(cmd));
+                        }
+                        self.bces[n].pc = pc.wrapping_add(2) & 0x3FFFF;
+                    }
+                    0b100 => {
+                        // #TDLI / #TDL (p. III-53): long transmit from
+                        // the base.
+                        let count =
+                            (if m { resolve(mem, val18) } else { val18 } & 0x3FFFF) + 1;
+                        let start = self.bces[n].base & 0x3FFFF;
+                        self.transmit_data(n, mem, buses, start, count, 2);
+                    }
+                    0b011 => {
+                        // #RDLI / #RDL (p. III-73): long receive at the
+                        // base.
+                        let count =
+                            (if m { resolve(mem, val18) } else { val18 } & 0x3FFFF) + 1;
+                        let start = self.bces[n].base & 0x3FFFF;
+                        self.receive_data(n, mem, buses, start, count, 2);
+                    }
+                    0b101 | 0b001 => {
+                        // #MOUT / #MIN (p. III-54/III-74): command +
+                        // data stream in one instruction. Two-fullword
+                        // form: displacement (8) + transfer count (16)
+                        // in word one, the 24-bit command at PC+2.
+                        // Indexed form (M=1): per-BCE tables at
+                        // ADDRESS+2i and ADDRESS+48+2i.
+                        let (disp, tc, cmd) = if m {
+                            let e1 = resolve(mem, val18);
+                            let cmd = mem
+                                .read_f((val18 + 48 + 2 * num) & 0x3FFFF & !1)
+                                .unwrap_or(0);
+                            (e1 >> 16 & 0x7FF, e1 & 0xFFFF, cmd & 0x00FF_FFFF)
+                        } else {
+                            let cmd = mem
+                                .read_f(pc.wrapping_add(2) & 0x3FFFF)
+                                .unwrap_or(0);
+                            (hw1 & 0xFF, hw2, cmd & 0x00FF_FFFF)
+                        };
+                        if !self.xmtr_enabled(n) {
+                            self.bce_error(n, bce_status::XMT_DISABLED);
+                            return;
+                        }
+                        self.bces[n].iuar = (cmd >> 19) as u8 & 0x1F;
+                        buses.transmit(n, BusWord::command(cmd));
+                        let start =
+                            (self.bces[n].base.wrapping_add(disp) & !1) & 0x3FFFF;
+                        let len = if m { 2 } else { 4 };
+                        if op3 == 0b101 {
+                            self.transmit_data(n, mem, buses, start, tc + 1, len);
+                        } else {
+                            self.receive_data(n, mem, buses, start, tc + 1, len);
+                        }
+                    }
+                    _ => {
+                        self.bce_error(n, bce_status::ILLEGAL);
+                    }
+                }
+            }
+            _ => {
+                self.bce_error(n, bce_status::ILLEGAL);
+            }
+        }
+    }
+
+    /// Common transmit path (#TDS/#TDL/#MOUT data phase): `count`
+    /// halfwords from `start`, then PC += `ilen`. A disabled transmitter
+    /// is the Table 1.2 bit-23 error.
+    fn transmit_data(
+        &mut self,
+        n: usize,
+        mem: &crate::mem::Memory,
+        buses: &mut dyn BusFabric,
+        start: u32,
+        count: u32,
+        ilen: u32,
+    ) {
+        if !self.xmtr_enabled(n) {
+            self.bce_error(n, bce_status::XMT_DISABLED);
+            return;
+        }
+        let iua = self.bces[n].iuar;
+        for i in 0..count {
+            let hw = mem.read_h((start + i) & 0x3FFFF).unwrap_or(0);
+            buses.transmit(n, BusWord::data(iua, hw));
+        }
+        let b = &mut self.bces[n];
+        b.pc = (b.pc + ilen) & 0x3FFFF;
+    }
+
+    /// Common receive path (#RDS/#RDL/#MIN data phase): `count` halfwords
+    /// into `start`. Absence of bus data stands in for the hardware's
+    /// MTO timeout (timing unmodeled): initial timeout if nothing
+    /// arrived, ordinary timeout mid-stream. Validity checks per Table
+    /// 1.2: command sync mid-stream, SEV pattern, IUA signature.
+    fn receive_data(
+        &mut self,
+        n: usize,
+        mem: &mut crate::mem::Memory,
+        buses: &mut dyn BusFabric,
+        start: u32,
+        count: u32,
+        ilen: u32,
+    ) {
+        for i in 0..count {
+            let w = if self.rcvr_enabled(n) { buses.receive(n) } else { None };
+            let w = match w {
+                Some(w) => w,
+                None => {
+                    self.bce_error(
+                        n,
+                        if i == 0 {
+                            bce_status::INITIAL_TIMEOUT
+                        } else {
+                            bce_status::TIMEOUT
+                        },
+                    );
+                    return;
+                }
+            };
+            if w.cmd_sync {
+                self.bce_error(n, bce_status::SYNC_ERROR);
+                return;
+            }
+            let iua = (w.info >> 19) as u8 & 0x1F;
+            let sev = w.info & 7;
+            if iua != self.bces[n].iuar {
+                // Signature mismatch: flag plus the IUA ORed into IBM
+                // bits 8-12 (Table 1.2).
+                self.bce_error(
+                    n,
+                    bce_status::SIG_MISMATCH | ((iua as u32) << 19),
+                );
+                return;
+            }
+            if sev != 0b101 {
+                self.bce_error(n, (sev ^ 0b101) << 20);
+                return;
+            }
+            let data = (w.info >> 3) as u16;
+            let _ = mem.write_h((start + i) & 0x3FFFF, data);
+        }
+        let b = &mut self.bces[n];
+        b.pc = (b.pc + ilen) & 0x3FFFF;
     }
 
     fn err(&mut self, bit: u32) {
@@ -581,19 +1024,19 @@ impl IoSubsystem for Iop {
         match (data.is_some(), cmd) {
             // ---- PCO (outputs) ----
             (true, 0x8508_0000) => {
-                self.mia_rcvr_enabled = true;
+                self.mia_rcvr_enable |= data.unwrap_or(0);
                 PcResponse::OutputAccepted
             }
             (true, 0x8408_0000) => {
-                self.mia_rcvr_enabled = false;
+                self.mia_rcvr_enable &= !data.unwrap_or(0);
                 PcResponse::OutputAccepted
             }
             (true, 0x8504_0000) => {
-                self.mia_xmtr_enabled = true;
+                self.mia_xmtr_enable |= data.unwrap_or(0);
                 PcResponse::OutputAccepted
             }
             (true, 0x8404_0000) => {
-                self.mia_xmtr_enabled = false;
+                self.mia_xmtr_enable &= !data.unwrap_or(0);
                 PcResponse::OutputAccepted
             }
             (true, 0x8510_0000) => {
@@ -724,11 +1167,11 @@ mod msc_tests {
             0x100,
             &[0x4010, 0x5011, 0x8012],
         );
-        iop.step(&mut mem); // @L: ACC = mem[0x100+0x10]
+        iop.step(&mut mem, &mut LocalBuses::new()); // @L: ACC = mem[0x100+0x10]
         assert_eq!(iop.msc.acc, 40);
-        iop.step(&mut mem); // @A: + mem[0x101+0x11]
+        iop.step(&mut mem, &mut LocalBuses::new()); // @A: + mem[0x101+0x11]
         assert_eq!(iop.msc.acc, 42);
-        iop.step(&mut mem); // @ST -> mem[0x102+0x12]
+        iop.step(&mut mem, &mut LocalBuses::new()); // @ST -> mem[0x102+0x12]
         assert_eq!(mem.read_f(0x114).unwrap(), 42);
         assert_eq!(iop.msc.pc, 0x103);
     }
@@ -744,11 +1187,11 @@ mod msc_tests {
         // @BC always (cond 111) forward +2
         let bc = 0b0010_0_111_0000_0000u16 | 2;
         let mut iop = iop_at(&mut mem, 0x200, &[li, ti, bc]);
-        iop.step(&mut mem);
+        iop.step(&mut mem, &mut LocalBuses::new());
         assert_eq!(iop.msc.acc as i32, -5);
-        iop.step(&mut mem);
+        iop.step(&mut mem, &mut LocalBuses::new());
         assert_eq!(iop.msc.acc, 5);
-        iop.step(&mut mem);
+        iop.step(&mut mem, &mut LocalBuses::new());
         assert_eq!(iop.msc.pc, 0x203 + 2, "branch adds disp to updated PC");
     }
 
@@ -757,18 +1200,18 @@ mod msc_tests {
         let mut mem = Memory::new(0x2000);
         // @BU immediate to 0x400: 1111 0 000 00000 0 aa + hw2
         let mut iop = iop_at(&mut mem, 0x300, &[0b1111_0_000_00000_0_00, 0x0400]);
-        iop.step(&mut mem);
+        iop.step(&mut mem, &mut LocalBuses::new());
         assert_eq!(iop.msc.pc, 0x400);
         // @CALL 4,0x500 from 0x400: return addr 0x404 stored at 0x500,
         // branch to 0x502 (App. II p. II-41).
         mem.load_halfwords(0x400, &[0b1111_0_001_00100_0_00, 0x0500]).unwrap();
-        iop.step(&mut mem);
+        iop.step(&mut mem, &mut LocalBuses::new());
         assert_eq!(mem.read_f(0x500).unwrap(), 0x404);
         assert_eq!(iop.msc.pc, 0x502);
         // long instruction at an odd boundary: boundary error, MSC stops
         let mut mem = Memory::new(0x2000);
         let mut iop = iop_at(&mut mem, 0x301, &[0b1111_0_000_00000_0_00, 0x0400]);
-        iop.step(&mut mem);
+        iop.step(&mut mem, &mut LocalBuses::new());
         assert!(!iop.msc.busy);
         assert!(iop.msc_errors & msc_status::BOUNDARY != 0);
     }
@@ -779,20 +1222,20 @@ mod msc_tests {
         mem.write_f(0x150, (-1i32) as u32).unwrap();
         // @TSZ +0x50 at 0x100: -1 + 1 = 0 -> skip next (App. II p. II-46)
         let mut iop = iop_at(&mut mem, 0x100, &[0x9050]);
-        iop.step(&mut mem);
+        iop.step(&mut mem, &mut LocalBuses::new());
         assert_eq!(mem.read_f(0x150).unwrap(), 0);
         assert_eq!(iop.msc.pc, 0x102);
         // @CI immediate: ACC=5 vs 5 -> PC += 3 (p. II-47)
         let mut mem = Memory::new(0x2000);
         let mut iop = iop_at(&mut mem, 0x200, &[0b1111_0_110_00000_0_00, 5]);
         iop.msc.acc = 5;
-        iop.step(&mut mem);
+        iop.step(&mut mem, &mut LocalBuses::new());
         assert_eq!(iop.msc.pc, 0x203);
         // @TM immediate mask: ACC & 6 != 0 -> PC += 3 (p. II-48)
         let mut mem = Memory::new(0x2000);
         let mut iop = iop_at(&mut mem, 0x200, &[0b1111_0_111_00000_0_00, 6]);
         iop.msc.acc = 2;
-        iop.step(&mut mem);
+        iop.step(&mut mem, &mut LocalBuses::new());
         assert_eq!(iop.msc.pc, 0x203);
     }
 
@@ -802,19 +1245,21 @@ mod msc_tests {
         // @LBB BCE 1 <- 0x600; @SIO with ACC bit 1; @LBP busy BCE errors
         let lbb = [0b1111_0_010_00001_0_00u16, 0x0600];
         let mut iop = iop_at(&mut mem, 0x100, &lbb);
-        iop.step(&mut mem);
+        iop.step(&mut mem, &mut LocalBuses::new());
         assert_eq!(iop.bces[0].base, 0x600);
-        // @SIO: ACC bit 1 (IBM) = BCE1
+        // @SIO: ACC bit 1 (IBM) = BCE1. Give BCE1 a #BU-to-self spin
+        // loop at 0 so it stays busy once it starts executing.
+        mem.load_halfwords(0, &[0b1111_0_000_00000_0_00, 0x0000]).unwrap();
         mem.load_halfwords(0x102, &[0b1110_0_100_0000_0000]).unwrap();
         iop.msc.acc = 1 << 30;
-        iop.step(&mut mem);
+        iop.step(&mut mem, &mut LocalBuses::new());
         assert!(iop.bces[0].busy);
         // pad to an even boundary (long formats require it), then
         // @LBP to the now-busy BCE: error bits, register untouched
         mem.load_halfwords(0x103, &[0xC000]).unwrap(); // @DLY 0
         mem.load_halfwords(0x104, &[0b1111_0_011_00001_0_00, 0x0700]).unwrap();
-        iop.step(&mut mem);
-        iop.step(&mut mem);
+        iop.step(&mut mem, &mut LocalBuses::new());
+        iop.step(&mut mem, &mut LocalBuses::new());
         assert_eq!(iop.bces[0].pc, 0);
         assert!(iop.msc_errors & msc_status::LBP_ERR != 0);
         assert!(iop.msc_errors & msc_status::PROGRAM_EXCEPTION != 0);
@@ -832,7 +1277,7 @@ mod msc_tests {
         iop.msc.acc = 0xAABB_CCDD;
         iop.msc.x = 0x155;
         iop.c6 = 0x400;
-        iop.step(&mut mem);
+        iop.step(&mut mem, &mut LocalBuses::new());
         assert_eq!(iop.msc.pc, 0x408, "branched to the external program");
         assert_eq!(iop.c6, 0, "C6 cleared");
         assert_eq!(mem.read_f(0x402).unwrap(), 0xAABB_CCDD, "ACC saved");
@@ -841,7 +1286,7 @@ mod msc_tests {
         // short_ea: pc 0x408 + disp -8 -> 0x400
         let rec = 0b1010_0_000_0000_0000u16 | ((-8i16 as u16) & 0x7FF);
         mem.load_halfwords(0x408, &[rec]).unwrap();
-        iop.step(&mut mem);
+        iop.step(&mut mem, &mut LocalBuses::new());
         assert_eq!(iop.msc.acc, 0xAABB_CCDD);
         assert_eq!(iop.msc.x, 0x155);
         assert_eq!(iop.msc.pc, 0x101, "returned to the caller");
@@ -852,9 +1297,185 @@ mod msc_tests {
         let mut mem = Memory::new(0x2000);
         // @INT level 5 then @WAT
         let mut iop = iop_at(&mut mem, 0x100, &[0b0011_0_000_0000_0101, 0x0800]);
-        iop.step(&mut mem);
+        iop.step(&mut mem, &mut LocalBuses::new());
         assert_eq!(iop.cpu_interrupt, Some(5));
-        iop.step(&mut mem);
+        iop.step(&mut mem, &mut LocalBuses::new());
         assert!(!iop.msc.busy, "@WAT enters the wait state");
+    }
+}
+
+#[cfg(test)]
+mod bce_tests {
+    use super::*;
+    use crate::mem::Memory;
+
+    fn iop_bce(mem: &mut Memory, n: usize, pc: u32, words: &[u16]) -> Iop {
+        mem.load_halfwords(pc, words).unwrap();
+        let mut iop = Iop::new();
+        iop.halted = false;
+        iop.bces[n].busy = true;
+        iop.bces[n].pc = pc;
+        iop.mia_xmtr_enable = 1 << (31 - n as u32);
+        iop.mia_rcvr_enable = 1 << (31 - n as u32);
+        iop
+    }
+
+    #[test]
+    fn bce_registers_and_wait() {
+        let mut mem = Memory::new(0x2000);
+        // #LBR 0x600 ; #LTOI 5 ; #SIB ; #WAT
+        let mut iop = iop_bce(
+            &mut mem,
+            0,
+            0x100,
+            &[
+                0b1111_0_010_000000_00,
+                0x0600,
+                0b10110_000_0000_0101,
+                0b11101_00000000000,
+                0b00001_00000000000,
+            ],
+        );
+        let mut bus = LocalBuses::new();
+        iop.step(&mut mem, &mut bus);
+        assert_eq!(iop.bces[0].base, 0x600);
+        iop.step(&mut mem, &mut bus);
+        assert_eq!(iop.bces[0].mto, 5);
+        iop.step(&mut mem, &mut bus);
+        assert!(iop.bces[0].indicator);
+        assert_eq!(iop.indicators, 1 << 30, "BCE 1 = IBM bit 1");
+        iop.step(&mut mem, &mut bus);
+        assert!(!iop.bces[0].busy, "#WAT enters the wait state");
+    }
+
+    #[test]
+    fn cmdi_tds_transmit() {
+        let mut mem = Memory::new(0x2000);
+        // buffer: 3 halfwords at base+4
+        mem.load_halfwords(0x604, &[0x1111, 0x2222, 0x3333]).unwrap();
+        // #CMDI with IUA 9, low bits 0x21 ; #TDS count 2 (=3 words) disp 4
+        let mut iop = iop_bce(
+            &mut mem,
+            2,
+            0x100,
+            &[
+                0b1111_0_110_01001_000,
+                0x0021,
+                0b100_00010_00000100,
+            ],
+        );
+        iop.bces[2].base = 0x600;
+        let mut bus = LocalBuses::new();
+        iop.step(&mut mem, &mut bus); // #CMDI
+        assert_eq!(iop.bces[2].iuar, 9, "IUAR from command's top 5 bits");
+        assert_eq!(bus.sent.len(), 1);
+        assert_eq!(bus.sent[0], (2, BusWord::command((9 << 19) | 0x21)));
+        iop.step(&mut mem, &mut bus); // #TDS
+        assert_eq!(bus.sent.len(), 4);
+        assert_eq!(bus.sent[1], (2, BusWord::data(9, 0x1111)));
+        assert_eq!(bus.sent[3], (2, BusWord::data(9, 0x3333)));
+        assert!(iop.bces[2].busy, "no error");
+        // with the transmitter disabled, #TDS error-terminates (bit 23)
+        let mut mem2 = Memory::new(0x2000);
+        let mut iop = iop_bce(&mut mem2, 2, 0x100, &[0b100_00010_00000100]);
+        iop.mia_xmtr_enable = 0;
+        iop.step(&mut mem2, &mut LocalBuses::new());
+        assert!(!iop.bces[2].busy);
+        assert!(iop.bces[2].status & bce_status::XMT_DISABLED != 0);
+        assert!(iop.bces[2].error && iop.bces[2].indicator);
+    }
+
+    #[test]
+    fn rds_receive_and_errors() {
+        // Good stream into base+disp, then timeout and IUA-mismatch cases.
+        let mut mem = Memory::new(0x2000);
+        let mut iop = iop_bce(&mut mem, 0, 0x100, &[0b011_00001_00001000]); // #RDS c1 d8
+        iop.bces[0].base = 0x700;
+        iop.bces[0].iuar = 5;
+        let mut bus = LocalBuses::new();
+        bus.inject(0, BusWord::data(5, 0xAAAA));
+        bus.inject(0, BusWord::data(5, 0xBBBB));
+        iop.step(&mut mem, &mut bus);
+        assert_eq!(mem.read_h(0x708).unwrap(), 0xAAAA);
+        assert_eq!(mem.read_h(0x709).unwrap(), 0xBBBB);
+        assert!(iop.bces[0].busy);
+        // empty bus: initial timeout
+        let mut mem = Memory::new(0x2000);
+        let mut iop = iop_bce(&mut mem, 0, 0x100, &[0b011_00000_00000000]);
+        iop.step(&mut mem, &mut LocalBuses::new());
+        assert!(iop.bces[0].status & bce_status::INITIAL_TIMEOUT != 0);
+        assert!(!iop.bces[0].busy);
+        // wrong IUA: signature mismatch, IUA recorded in IBM bits 8-12
+        let mut mem = Memory::new(0x2000);
+        let mut iop = iop_bce(&mut mem, 0, 0x100, &[0b011_00000_00000000]);
+        iop.bces[0].iuar = 5;
+        let mut bus = LocalBuses::new();
+        bus.inject(0, BusWord::data(7, 0x1234));
+        iop.step(&mut mem, &mut bus);
+        assert!(iop.bces[0].status & bce_status::SIG_MISMATCH != 0);
+        assert_eq!((iop.bces[0].status >> 19) & 0x1F, 7);
+    }
+
+    /// Two GPCs on one shared bus: GPC A commands and transmits, GPC B
+    /// sits in listen mode (#WIX), branches through its listen table,
+    /// and receives A's data — the App. III §4 mechanism the BFS used to
+    /// eavesdrop on PASS, and the seam for the phase-4 redundant set.
+    #[test]
+    fn two_gpc_listen_mode() {
+        struct View<'a> {
+            peer: &'a mut std::collections::VecDeque<BusWord>,
+            own: &'a mut std::collections::VecDeque<BusWord>,
+        }
+        impl BusFabric for View<'_> {
+            fn transmit(&mut self, _bus: usize, w: BusWord) {
+                self.peer.push_back(w);
+            }
+            fn receive(&mut self, _bus: usize) -> Option<BusWord> {
+                self.own.pop_front()
+            }
+        }
+        let mut q_a = VecDeque::new();
+        let mut q_b = VecDeque::new();
+
+        // GPC A: #CMDI carrying a Listen Command (common IOP address
+        // 01000 = 8, target IUA 8, table index 3), then #TDS of 2 words.
+        let mut mem_a = Memory::new(0x2000);
+        mem_a.load_halfwords(0x600, &[0xCAFE, 0xF00D]).unwrap();
+        let listen = BusWord::listen(8, 3);
+        let mut a = iop_bce(
+            &mut mem_a,
+            0,
+            0x100,
+            &[
+                0b1111_0_110_01000_000u16 | ((listen.info >> 16) & 7) as u16,
+                listen.info as u16,
+                0b100_00001_00000000,
+            ],
+        );
+        a.bces[0].base = 0x600;
+
+        // GPC B: #WIX with its branch table; entry 3 points at 0x300,
+        // where a #RDS receives 2 words into base+0.
+        let mut mem_b = Memory::new(0x2000);
+        let mut b = iop_bce(&mut mem_b, 0, 0x200, &[0b00100_000_0000_1111]);
+        b.mia_xmtr_enable = 0; // transmitter disabled = listen mode (§4.1)
+        // table at (0x201 + 0xF + 1) & !1 = 0x210; entry 3 at 0x216
+        mem_b.write_f(0x216, 0x300).unwrap();
+        mem_b.load_halfwords(0x300, &[0b011_00001_00000000]).unwrap();
+        b.bces[0].base = 0x700;
+
+        // A commands; B catches the listen command and branches.
+        a.step(&mut mem_a, &mut View { peer: &mut q_b, own: &mut q_a });
+        b.step(&mut mem_b, &mut View { peer: &mut q_a, own: &mut q_b });
+        assert_eq!(b.bces[0].pc, 0x300, "listen table branch taken");
+        assert_eq!(b.bces[0].iuar, 8, "IUAR from the listen command");
+        // A transmits data; B receives it.
+        a.step(&mut mem_a, &mut View { peer: &mut q_b, own: &mut q_a });
+        b.step(&mut mem_b, &mut View { peer: &mut q_a, own: &mut q_b });
+        assert_eq!(mem_b.read_h(0x700).unwrap(), 0xCAFE);
+        assert_eq!(mem_b.read_h(0x701).unwrap(), 0xF00D);
+        assert!(b.bces[0].busy, "clean reception");
+        // one GPC's memory never touched the other's
+        assert_eq!(mem_a.read_h(0x700).unwrap(), 0);
     }
 }
