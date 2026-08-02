@@ -48,24 +48,28 @@ fn scal_sret_round_trip() {
 fn mvh_block_move() {
     // §9.4: count in R1 bits 16-31; destination offset in R1 bits 1-15
     // (sector from DSE/DSR by bit 0); source offset + DSR in R2.
+    // The count decrements before each move: offsets count-1..0 (the
+    // Figure 9-1 order as built; confirmed against yaGPC2 — and against
+    // a real HALSFC program whose constant table's first halfword was
+    // dropped by the off-by-one this replaced).
     let mut c = cpu8k();
     for i in 0..4u32 {
-        c.mem.write_h(0x501 + i, 0x1110 + i as u16).unwrap();
+        c.mem.write_h(0x500 + i, 0x1110 + i as u16).unwrap();
     }
     c.set_r(1, (0x0600u32 << 16) | 4); // dest 0x600, count 4
     c.set_r(2, 0x0500u32 << 16); // source 0x500, bit 0 = 0 (sector 0)
     exec1(&mut c, &[0b01101_001_11101_010]); // MVH 1,2
     for i in 0..4u32 {
-        assert_eq!(c.mem.read_h(0x601 + i).unwrap(), 0x1110 + i as u16);
+        assert_eq!(c.mem.read_h(0x600 + i).unwrap(), 0x1110 + i as u16);
     }
     assert_eq!(c.r(1), 0x0600_0000, "count decremented to zero");
     // zero/negative count: no move (§9.4)
     let mut c = cpu8k();
-    c.mem.write_h(0x501, 0xAAAA).unwrap();
+    c.mem.write_h(0x500, 0xAAAA).unwrap();
     c.set_r(1, 0x0600u32 << 16);
     c.set_r(2, 0x0500u32 << 16);
     exec1(&mut c, &[0b01101_001_11101_010]);
-    assert_eq!(c.mem.read_h(0x601).unwrap(), 0);
+    assert_eq!(c.mem.read_h(0x600).unwrap(), 0);
 }
 
 #[test]

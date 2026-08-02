@@ -1417,10 +1417,13 @@ impl Cpu {
                     };
                     let d19 = (dsect << 15) | ((r2v_dest(r1v)) as u32);
                     let s19 = (ssect << 15) | (((r2v >> 16) & 0x7FFF) as u32);
-                    for c in (1..=count as u32).rev() {
+                    // The count is decremented BEFORE each move (Figure
+                    // 9-1 as implemented by the hardware; confirmed via
+                    // yaGPC2 exec_MVH): offsets count-1 down to 0.
+                    for c in (0..count as u32).rev() {
                         let v = self.read_h(s19 + c, at)?;
                         if self.mem.is_protected(d19 + c) {
-                            self.set_r_lower(r1, c as u16);
+                            self.set_r_lower(r1, c as u16 + 1);
                             self.psw.ic = self.psw.ic.wrapping_sub(dec.len as u16);
                             return self.program_interrupt(pe_code::STORE_PROTECT, at);
                         }
