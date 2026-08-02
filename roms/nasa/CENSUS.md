@@ -151,3 +151,15 @@ a user handler - it falls through to MM15SN's identity-matrix fallback
 instead. Our halucp implements that exact exclusion.
 | MM12S3 | 3x3 DETERMINANT | R2 in, F0 out (ACALL) | diag(2,3,4) | 24 exact |
 | VV3S3 | VECTOR SUBTRACT | R2,R3 in, R1 out (intrinsic) | [5,7,9]-[1,2,3] | [4,5,6] |
+
+## Machine-limit demonstrations (ours, not NASA's)
+
+Three small assembly programs written to expose what the AP-101S
+cannot do. They run in the browser console alongside the flight
+routines.
+
+| Program | Does | Result | What it shows |
+|---|---|---|---|
+| LIMIT1 | adds 0.1 ten times | 0.9999996 | 0.1 is not representable in hexadecimal floating point; the drift is structural, not a bug |
+| LIMIT2 | (4.29e9 + 1) - 4.29e9 | 0 | past ~16 million the gap between representable numbers exceeds 1, so the addition vanishes - 24 fraction bits is the entire budget |
+| LIMIT3 | multiplies by 16 million, 20 times | 1.1e72 | approaching the ceiling of ~7.2e75, beyond which the exponent overflows and the program is interrupted |
