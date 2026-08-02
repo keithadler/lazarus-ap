@@ -246,6 +246,13 @@ pub struct Iop {
     /// MSC Local Store register C6 (external-call mailbox, App. II
     /// p. II-62): the CPU writes a program address here; @SEC samples it.
     pub c6: u32,
+    /// IOP local store, addressable by the CPU via LOAD/READ LOCAL
+    /// STORE (App. I p. I-27..I-31): 26 regions (0 = MSC, 1-24 = BCEs,
+    /// 25 = self test) x 3 banks x 8 words of 18 bits. Register-mapped
+    /// words are implemented where documented by name — MSC bank C word
+    /// 6 is "Local Store Register C6", the external-call mailbox (App.
+    /// II p. II-62); the rest is raw storage.
+    pub local_store: Vec<[[u32; 8]; 3]>,
     /// Raised by the MSC @INT instruction: the 11-bit level field, for
     /// the host to route to a CPU external interrupt. PARTIAL: the level
     /// field's encoding page (App. II p. II-94) is thin; the raw field is
@@ -269,6 +276,7 @@ impl Default for Iop {
             fail_discretes: 0,
             indicators: 0,
             c6: 0,
+            local_store: vec![[[0; 8]; 3]; 26],
             cpu_interrupt: None,
         }
     }
@@ -1084,6 +1092,35 @@ impl IoSubsystem for Iop {
     fn pc(&mut self, cw: u32, data: Option<u32>) -> PcResponse {
         if subsystem(cw).is_none() {
             return PcResponse::Timeout;
+        }
+        // LOAD/READ LOCAL STORE (App. I p. I-27..I-31): region in bits
+        // 7-11, bank in 12-13, word in 14-16; the data word's bits 14-31
+        // carry the 18-bit value.
+        if subsystem(cw) == Some(Subsystem::LocalStore) {
+            let region = ((cw >> 20) & 0x1F) as usize;
+            let bank = ((cw >> 18) & 3) as usize;
+            let loc = ((cw >> 15) & 7) as usize;
+            if region >= self.local_store.len() || bank > 2 {
+                return PcResponse::Timeout;
+            }
+            return match data {
+                Some(d) => {
+                    let v = d & 0x3FFFF;
+                    self.local_store[region][bank][loc] = v;
+                    if region == 0 && bank == 2 && loc == 6 {
+                        self.c6 = v; // MSC C6: external-call mailbox
+                    }
+                    PcResponse::OutputAccepted
+                }
+                None => {
+                    let v = if region == 0 && bank == 2 && loc == 6 {
+                        self.c6
+                    } else {
+                        self.local_store[region][bank][loc]
+                    };
+                    PcResponse::Input(v)
+                }
+            };
         }
         // Mask off the ignored bits (17-31) for command matching; the
         // App. I summaries list bit 17 set for a few test commands, which

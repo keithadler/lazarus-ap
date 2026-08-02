@@ -39,8 +39,19 @@ memory, not the DEU), and the CRT header was painted by the GPC's
 #MOUT. `--demo` types "OPS 2 0 1 PRO" itself for a non-interactive
 smoke test.
 
+## CPU-tasked echo (working)
+
+tests/crew_interface.rs::cpu_tasked_keyboard_echo runs the whole
+pipeline in GPC software across all four processor types: keystroke ->
+DEU -> BCE #MIN poll into main storage (one-shot, #SIB/#WAT handshake)
+-> CPU (glyph lookup, CRT-cell bump by patching the #MOUT command
+word, then a real PC LOAD LOCAL STORE writing MSC register C6) -> MSC
+@SEC external call -> @SIO -> BCE #MOUT -> DEU CRT. The MSC main loop
+supervises the poll handshake: it restarts the keyboard BCE only after
+the CPU consumed the keystroke — ending the poller/CPU race the
+free-running version had. LOAD/READ LOCAL STORE per App. I p. I-27+
+(region/bank/word select; C6 = MSC bank C word 6).
+
 ## Staged
 
 - DEU format overlays / decoms (needs the DPS Dictionary formats).
-- CPU-side keyboard-echo software driven by IOP interrupts rather than
-  host pumping (needs LOAD LOCAL STORE so the CPU can task the MSC).
