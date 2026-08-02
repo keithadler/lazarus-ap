@@ -77,7 +77,12 @@ full phase 4:
   identically on 4 emulated GPCs, detecting an injected fault, voting
   the sick machine out, annunciating it — end to end, reproducibly.
 
-## Phase 5 — crew interfaces
+## Phase 5 — crew interfaces — STARTED (see DEU_STATUS.md)
+
+Working: DEU model on a display bus (keystroke polling via #MIN,
+display writes via #MOUT, BFS eavesdrop of crew input); protocol
+encodings are documented emulator conventions pending the real DEU
+spec. Remaining:
 
 - DEU keyboard/display model on the display buses: keystroke encoding,
   display formats per the public DPS Overview Workbook / DPS Dictionary.

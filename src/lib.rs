@@ -16,6 +16,7 @@
 pub mod asm;
 pub mod cpu;
 pub mod decode;
+pub mod deu;
 pub mod float;
 pub mod gpc;
 pub mod iop;

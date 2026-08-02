@@ -647,6 +647,13 @@ impl Iop {
                 }
             };
             if w.cmd_sync {
+                // Listen mode accepts a command as the first input — the
+                // commander's own command passing by (§3.4.3, Figure 3.8
+                // listen-mode column); command sync mid-stream is the
+                // Table 1.2 sync error.
+                if !st.got_any && !self.xmtr_enabled(n) {
+                    continue;
+                }
                 self.bce_error(n, bce_status::SYNC_ERROR);
                 return;
             }

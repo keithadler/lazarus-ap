@@ -59,6 +59,20 @@ impl Gpc {
     }
 }
 
+/// Anything attached to the serial buses besides GPCs: display units,
+/// mass memory, MDMs... A subsystem sees every word on the fabric and
+/// may answer; its response words go onto the same bus, heard by every
+/// GPC (commander and listeners alike — how the BFS shadowed PASS's
+/// display traffic).
+pub trait BusSubsystem {
+    fn observe(&mut self, bus: usize, w: BusWord) -> Vec<BusWord>;
+    /// The bus this subsystem answers on (its responses are emitted
+    /// there).
+    fn bus(&self) -> usize;
+    /// Downcast access for tests and front ends.
+    fn as_any(&self) -> &dyn std::any::Any;
+}
+
 /// A hydraulic-style force-voted actuator port set: one command port per
 /// flight-critical bus. Ports physically sum their force; a port whose
 /// command persistently deviates from the voted output is bypassed —
@@ -143,6 +157,7 @@ pub struct RedundantSet {
     /// the crudest fault model; richer ones inject at memory/bus level.
     pub dead: Vec<Option<Trap>>,
     pub actuators: Vec<ForceVotedActuator>,
+    pub subsystems: Vec<Box<dyn BusSubsystem>>,
     /// Bus-level fault injection: data words transmitted on this bus are
     /// delivered with their SEV validity bits corrupted — a garbled
     /// transmission every receiver's validity checks will reject.
@@ -153,6 +168,7 @@ struct FabricView<'a> {
     me: usize,
     rx: &'a mut [Vec<VecDeque<BusWord>>],
     actuators: &'a mut [ForceVotedActuator],
+    subsystems: &'a mut [Box<dyn BusSubsystem>],
     corrupt_bus: Option<usize>,
 }
 
@@ -169,6 +185,16 @@ impl BusFabric for FabricView<'_> {
         }
         for a in self.actuators.iter_mut() {
             a.observe(bus, w);
+        }
+        // Subsystem responses go out on the responder's bus, heard by
+        // every GPC — the commander's receive and any listeners.
+        for sub in self.subsystems.iter_mut() {
+            for r in sub.observe(bus, w) {
+                let rb = sub.bus();
+                for q in self.rx.iter_mut() {
+                    q[rb].push_back(r);
+                }
+            }
         }
     }
 
@@ -187,6 +213,7 @@ impl RedundantSet {
                 .collect(),
             dead: vec![None; n],
             actuators: Vec::new(),
+            subsystems: Vec::new(),
             corrupt_bus: None,
         }
     }
@@ -202,6 +229,7 @@ impl RedundantSet {
             me: i,
             rx: &mut self.rx,
             actuators: &mut self.actuators,
+            subsystems: &mut self.subsystems,
             corrupt_bus: self.corrupt_bus,
         };
         if let Err(t) = self.gpcs[i].step(&mut view) {
