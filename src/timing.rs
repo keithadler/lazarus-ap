@@ -1,3 +1,16 @@
+// Copyright (c) 2026 Lazarus AP contributors
+//
+// Ported from yaShuttle/yaGPC2/src/timing.c in the Virtual AGC project,
+// which is licensed under the GNU General Public License version 2 or
+// later. This file, and this project as a whole, are licensed on the
+// same terms. See LICENSE and NOTICE.
+//
+// The underlying numbers are not Virtual AGC's: they come from the
+// Space Shuttle HAL/S-FC compiler's own EXECUTION_TIMES procedure in
+// PASS2.PROCS/OBJECTGE.xpl, which is public domain. What is inherited
+// here is the reconstruction of the compiler's private instruction
+// index into mnemonics, and the shape of the resolver.
+
 //! Per-instruction AP-101S execution times.
 //!
 //! # Provenance

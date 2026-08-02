@@ -76,4 +76,6 @@ The recovered material — the AP-101S manuals, the HAL/S compiler
 source, ASM101S, the runtime library, the fixtures — exists because of
 **Ron Burkey's Virtual AGC project** and **Don Schmidt's** AP-101S
 work. Anything derived from them should say so. The NASA/IBM sources
-are public domain; the Virtual AGC artifacts carry their own terms.
+are public domain; the Virtual AGC artifacts are GPL v2-or-later, which
+is why this project is too. [NOTICE](NOTICE) has the full breakdown —
+please keep it accurate when you add anything derived from elsewhere.

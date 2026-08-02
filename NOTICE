@@ -1,0 +1,55 @@
+Lazarus AP — provenance and licensing
+=====================================
+
+This repository combines work under three different licenses. The
+summary below says which is which; individual files carry their own
+headers where they differ.
+
+1. This project's own code and documentation
+--------------------------------------------
+    src/, tools/, tests/, docs/*.md, docs/*.html, README.md
+    Copyright (c) 2026 Lazarus AP contributors
+    GNU General Public License, version 2 or later (see LICENSE).
+
+    GPL was chosen rather than a permissive licence because parts of
+    this project derive from the Virtual AGC project (below), which is
+    GPL v2-or-later. Specifically, src/timing.rs is a port of
+    yaShuttle/yaGPC2/src/timing.c. Licensing the whole under GPL keeps
+    the combined work consistent and puts this project in the same
+    licence family as the work it depends on.
+
+2. Recovered NASA / IBM Space Shuttle material
+-----------------------------------------------
+    roms/nasa/RUNASM/*.asm    — the HAL/S flight runtime library
+    roms/nasa/lib/*.obj       — the same, assembled by ASM101S
+    roms/*/*.fcm, *.obj       — linked images of the above
+
+    Believed to be in the public domain. Every recovered source file
+    carries the header line:
+
+        Access: Public Domain, no restrictions believed to exist.
+
+    These files are NOT covered by this project's licence. They are
+    included so that the resurrection does not depend on a toolchain
+    checkout that can be deleted — as one already was.
+
+3. Virtual AGC
+---------------
+    The recovered artifacts above, the HAL/S-FC compiler, the ASM101S
+    assembler and the yaGPC2 cross-check emulator all exist because of
+    Ron Burkey's Virtual AGC project (https://www.ibiblio.org/apollo/)
+    and Don Schmidt's AP-101S work.
+
+    The bulk of Virtual AGC is GPL v2-or-later; some components are
+    declared public domain by their author (ASM101S among them). Refer
+    to that project's own LICENSE.txt and to individual files.
+
+    Derived here:
+      - src/timing.rs      from yaGPC2/src/timing.c, whose own tables
+                           come from the Shuttle compiler's
+                           PASS2.PROCS/OBJECTGE.xpl
+      - tools/lnk_lite.py  object-format handling informed by
+                           ASM101S/readObject101S.py (public domain)
+
+If you believe anything here is misattributed, please open an issue —
+getting provenance right is the point of this project.

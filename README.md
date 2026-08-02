@@ -168,5 +168,12 @@ languages, its toolchain, and its flight mathematics.
 
 ## License
 
-MIT (see [LICENSE](LICENSE)). The recovered NASA/IBM sources referenced
-here are public domain; the Virtual AGC artifacts carry their own terms.
+**GPL v2-or-later** (see [LICENSE](LICENSE)).
+
+Parts of this project derive from Virtual AGC, which is GPL
+v2-or-later — `src/timing.rs` is a port of yaGPC2's timing tables — so
+the whole is licensed to match rather than sit in conflict with it.
+
+The recovered NASA/IBM flight sources vendored under `roms/nasa/` are
+public domain and are not covered by that licence. [NOTICE](NOTICE)
+sets out exactly what came from where.

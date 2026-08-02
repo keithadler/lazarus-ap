@@ -18,7 +18,7 @@ keywords:
   - HAL/S
   - history of computing
   - retrocomputing
-license: MIT
+license: GPL-2.0-or-later
 repository-code: "https://github.com/USER/lazarus-ap"
 references:
   - type: report
