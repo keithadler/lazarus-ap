@@ -64,6 +64,15 @@ cargo test
 `cargo test` runs the whole suite (143 tests: unit, per-instruction,
 addressing-mode, and golden-trace) and reports pass/fail per test.
 
+## Real HAL/S programs
+
+`tests/hal_hello.rs` runs a genuine HAL/S program — compiled by the
+recovered Space Shuttle HAL/S-FC compiler, linked by lnk101 (artifacts
+from the Virtual AGC project) — end to end: FCM image loading, the
+AP-101S CPU, and the halucp runtime-I/O trap layer. All five HELLO
+WORLD loop iterations and twenty inner WRITEs come out correct,
+terminated by the runtime's own SVC 0x0015.
+
 ## The crew station
 
 ```

@@ -129,14 +129,25 @@ pub enum HalRun {
 
 /// Drive a CPU with UCP trapping until end-of-program, a halt, or the
 /// step budget runs out.
+///
+/// SVC protocol (yaGPC2 halucp_handle_svc): the SVC's effective address
+/// POINTS at the code — `svcCode = mem[ea]`. 0x0015 ends the program;
+/// other codes are runtime builtins (events, error queries), treated as
+/// no-ops in this core subset (the SVC has no PSA handler installed, so
+/// skipping the failed swap and continuing IS the no-op).
 pub fn run_hal(cpu: &mut Cpu, ucp: &mut HalUcp, max_steps: usize) -> HalRun {
     for _ in 0..max_steps {
         let nia = cpu.expand_branch(cpu.psw.ic);
         ucp.check_trap(cpu, nia);
         match cpu.step() {
             Ok(_) => {}
-            Err(Trap::UninitializedInterrupt { code: SVC_END, .. }) => {
-                return HalRun::Done;
+            Err(Trap::UninitializedInterrupt { code, .. }) => {
+                let ea = ((cpu.psw.ea_high as u32) << 15) | (code as u32 & 0x7FFF);
+                let svc = cpu.mem.read_h(ea).unwrap_or(0);
+                if svc == SVC_END {
+                    return HalRun::Done;
+                }
+                // other builtin SVC: continue (no-op)
             }
             Err(t) => return HalRun::Halt(Halt::Trap(t)),
         }
@@ -173,8 +184,9 @@ mod tests {
         LFXI 1,9
         STH  1,{iocode}
         BAL  7,OUTSTUB
-        DC   H(0xC9FB)      ; SVC 0x15 (end of program)
-        DC   H(0x0015)
+        DC   H(0xC9FB)      ; SVC ENDCODE (EA points at the 0x0015 code)
+        DC   H(ENDCODE)
+ENDCODE: DC  H(0x0015)
         ; runtime output stub at OUTRAP (= IOINIT+0x11): return to caller
         ORG  {stub}
 OUTSTUB: BCR 7,7
@@ -214,7 +226,13 @@ OUTSTUB: BCR 7,7
             ucp.check_trap(cpu, nia);
             match cpu.step() {
                 Ok(_) => {}
-                Err(Trap::UninitializedInterrupt { code: SVC_END, .. }) => return HalRun::Done,
+                Err(Trap::UninitializedInterrupt { code, .. }) => {
+                    let ea =
+                        ((cpu.psw.ea_high as u32) << 15) | (code as u32 & 0x7FFF);
+                    if cpu.mem.read_h(ea).unwrap_or(0) == SVC_END {
+                        return HalRun::Done;
+                    }
+                }
                 Err(t) => return HalRun::Halt(Halt::Trap(t)),
             }
         }
