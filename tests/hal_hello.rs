@@ -149,3 +149,74 @@ fn nasa_flight_sqrt_computes_sqrt2() {
     assert!(result.abs_diff(expect) <= 2, "sqrt(2): {result:08X} vs {expect:08X}");
     assert_eq!(r, HalRun::Done);
 }
+
+/// Second and third flight routines resurrected: SNCS — the Shuttle's
+/// sine/cosine (one call computes both: sin in F0, cos in F2).
+#[test]
+fn nasa_flight_sncs_computes_sin_cos() {
+    let bytes = std::fs::read("roms/nasa/SNCSRUN.fcm").unwrap();
+    let mut cpu = Cpu::new(Memory::full());
+    fcm::boot(&mut cpu, &bytes, Some(r#"{"entryPoint": 256}"#)).unwrap();
+    let mut ucp = HalUcp::new(u32::MAX >> 1, 0, 0, 0);
+    let r = run_hal(&mut cpu, &mut ucp, 100_000);
+    let sin_w = cpu.mem.read_f(0x110).unwrap();
+    let cos_w = cpu.mem.read_f(0x112).unwrap();
+    let to_f = |w: u32| {
+        let u = lazarus_ap::float::unpack_short(w);
+        if u.is_zero() { 0.0 } else {
+            let m = u.frac as f64 * (16f64).powi(u.ch - 78);
+            if u.neg { -m } else { m }
+        }
+    };
+    println!("r={r:?} sin={:08X}={} cos={:08X}={}", sin_w, to_f(sin_w), cos_w, to_f(cos_w));
+    assert_eq!(r, HalRun::Done);
+    assert!((to_f(sin_w) - 0.5f64.sin()).abs() < 1e-6, "sin(0.5)");
+    assert!((to_f(cos_w) - 0.5f64.cos()).abs() < 1e-6, "cos(0.5)");
+}
+
+/// Fourth: EXP — a LIB-convention routine, called by the genuine ACALL
+/// sequence (SCAL 0 through a #Q Figure-2-17 stub), returning via SRET.
+#[test]
+fn nasa_flight_exp_computes_e() {
+    let bytes = std::fs::read("roms/nasa/EXPRUN.fcm").unwrap();
+    let mut cpu = Cpu::new(Memory::full());
+    fcm::boot(&mut cpu, &bytes, Some(r#"{"entryPoint": 256}"#)).unwrap();
+    let mut ucp = HalUcp::new(u32::MAX >> 1, 0, 0, 0);
+    let r = run_hal(&mut cpu, &mut ucp, 200_000);
+    let w = cpu.mem.read_f(0x10E).unwrap();
+    let u = lazarus_ap::float::unpack_short(w);
+    let v = if u.is_zero() { 0.0 } else {
+        let m = u.frac as f64 * (16f64).powi(u.ch - 78);
+        if u.neg { -m } else { m }
+    };
+    println!("r={r:?} RESULT={w:08X}={v}");
+    assert_eq!(r, HalRun::Done);
+    assert!((v - std::f64::consts::E).abs() < 1e-6, "exp(1.0) = e");
+}
+
+/// Fifth and sixth: LOG and TAN, same genuine ACALL convention.
+#[test]
+fn nasa_flight_log_and_tan() {
+    let to_f = |w: u32| {
+        let u = lazarus_ap::float::unpack_short(w);
+        if u.is_zero() { 0.0 } else {
+            let m = u.frac as f64 * (16f64).powi(u.ch - 78);
+            if u.neg { -m } else { m }
+        }
+    };
+    for (fcm, expect, name) in [
+        ("roms/nasa/LOGRUN.fcm", std::f64::consts::LN_2, "ln(2)"),
+        ("roms/nasa/TANRUN.fcm", 0.5f64.tan(), "tan(0.5)"),
+    ] {
+        let bytes = std::fs::read(fcm).unwrap();
+        let mut cpu = Cpu::new(Memory::full());
+        fcm::boot(&mut cpu, &bytes, Some(r#"{"entryPoint": 256}"#)).unwrap();
+        let mut ucp = HalUcp::new(u32::MAX >> 1, 0, 0, 0);
+        let r = run_hal(&mut cpu, &mut ucp, 200_000);
+        let w = cpu.mem.read_f(0x10E).unwrap();
+        let v = to_f(w);
+        println!("{name}: r={r:?} {w:08X} = {v} (expect {expect})");
+        assert_eq!(r, HalRun::Done, "{name}");
+        assert!((v - expect).abs() < 1e-6, "{name}: {v} vs {expect}");
+    }
+}

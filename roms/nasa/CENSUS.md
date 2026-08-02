@@ -61,3 +61,21 @@ Lazarus AP: sqrt(2.0) = 0x4116A09E, exact. Atlantis closed out the
 Shuttle program on July 21, 2011; as far as this project can
 establish, these instructions had scarcely executed anywhere since -
 and never before in this resurrection.
+
+## The flight math lab — resurrection log
+
+| Routine | Convention | Input | Flight answer | Modern value | Status |
+|---|---|---|---|---|---|
+| SQRT | intrinsic (BAL 4) | 2.0 | 0x4116A09E = 1.4142135 | 1.4142136 | ✓ exact |
+| SNCS sin | intrinsic | 0.5 rad | 0x407ABBA1 = 0.4794255 | 0.4794255 | ✓ |
+| SNCS cos | intrinsic (F2!) | 0.5 rad | 0x40E0A940 = 0.8775826 | 0.8775826 | ✓ |
+| EXP | LIB (ACALL/SRET) | 1.0 | 0x412B7E15 = 2.7182817 | 2.7182818 | ✓ |
+| LOG | LIB | 2.0 | 0x40B17219 = 0.6931472 | 0.6931472 | ✓ |
+| TAN | LIB | 0.5 rad | 0x408BDA7A = 0.5463024 | 0.5463025 | ✓ |
+
+Conventions proven: intrinsics (AMAIN INTSIC=YES) called by plain
+BAL 4 with an R0 frame; LIB routines (plain AMAIN) called by the
+genuine ACALL sequence - DC X'D0FF' (SCAL 0) + Y(#Qname+X'3800')
+through a hand-built Figure 2-17 stub (Y(entry) + X'0E00'), returning
+via SRET. Driver template: EXP_DRV.asm; swap EXTRN/entry/argument.
+195 more routines await the same treatment.
