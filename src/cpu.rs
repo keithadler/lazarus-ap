@@ -84,12 +84,35 @@ pub struct Cpu {
     pub dse: [[u8; 8]; 2],
     /// Steps executed since construction.
     pub steps: u64,
+    /// Attached I/O subsystem for the PC instruction (§3.3); with none
+    /// attached, PC operations time out (CC 01) — architecturally the
+    /// handshake never completes.
+    pub io: Option<Box<dyn IoSubsystem>>,
 }
 
 impl Default for Cpu {
     fn default() -> Cpu {
         Cpu::new(Memory::full())
     }
+}
+
+/// A program-controlled I/O subsystem attached to the CPU (§3.2-3.3): the
+/// seam where the IOP model (phase 3) and inter-GPC channels (phase 4)
+/// plug in. The PC instruction transmits a 32-bit control word and either
+/// sends or receives one fullword.
+pub trait IoSubsystem {
+    /// Handle one PC operation. `data` is `Some` for output operations
+    /// (CW bit 0 = 1). Return the input word for input operations,
+    /// `OutputAccepted` for outputs, or `Timeout` if the handshake fails
+    /// (§3.3: sets CC 01).
+    fn pc(&mut self, cw: u32, data: Option<u32>) -> PcResponse;
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PcResponse {
+    Input(u32),
+    OutputAccepted,
+    Timeout,
 }
 
 /// Second operand resolved either to a register or a 19-bit storage address.
@@ -108,6 +131,7 @@ impl Cpu {
             fpr: [0; 8],
             dse: [[0; 8]; 2],
             steps: 0,
+            io: None,
         }
     }
 
@@ -1421,6 +1445,36 @@ impl Cpu {
                 for n in 0..4usize {
                     self.dse[self.psw.reg_set as usize][n] =
                         ((v >> (24 - 8 * n)) & 0xF) as u8;
+                }
+            }
+            Pc => {
+                // §3.3: privileged; the control word is in R2 (bit 0:
+                // 0 = input, 1 = output) and the data fullword in R1.
+                // CC 00 = successful, 01 = interface timeout. Note:
+                // yaGPC2/nsts-sim-gpc read the CW from R1 and data from
+                // R2, contradicting the PoO text; the PoO is followed
+                // here (see ISA_STATUS.md).
+                if self.privileged_violation(at)? {
+                    return Ok(());
+                }
+                let r2 = operand_reg(dec);
+                let cw = self.r(r2);
+                let data = if cw & 0x8000_0000 != 0 {
+                    Some(self.r(r1))
+                } else {
+                    None
+                };
+                let response = match self.io.as_mut() {
+                    Some(io) => io.pc(cw, data),
+                    None => PcResponse::Timeout,
+                };
+                match response {
+                    PcResponse::Input(v) => {
+                        self.set_r(r1, v);
+                        self.psw.cc = cc::ZERO;
+                    }
+                    PcResponse::OutputAccepted => self.psw.cc = cc::ZERO,
+                    PcResponse::Timeout => self.psw.cc = cc::POS,
                 }
             }
             Stdm => {

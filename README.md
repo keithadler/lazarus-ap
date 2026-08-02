@@ -11,7 +11,7 @@ instruction-level test suite. No HAL/S compiler, no flight software yet.
 
 ## What works
 
-- 137 instructions: the fixed-point, branching, shift, and logical
+- 138 instructions: the fixed-point, branching, shift, and logical
   sections plus (phase 2) the full floating-point set — IBM hexadecimal
   short/long formats with guard-digit prealignment and the §8.8
   exception rules — and the status-switching set (LPS, SPM, SSM, SVC,
@@ -61,7 +61,7 @@ cargo build
 cargo test
 ```
 
-`cargo test` runs the whole suite (142 tests: unit, per-instruction,
+`cargo test` runs the whole suite (143 tests: unit, per-instruction,
 addressing-mode, and golden-trace) and reports pass/fail per test.
 
 ## Run a program

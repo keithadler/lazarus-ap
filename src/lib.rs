@@ -21,6 +21,6 @@ pub mod mem;
 pub mod psw;
 pub mod trace;
 
-pub use cpu::{Cpu, Halt, Trap};
+pub use cpu::{Cpu, Halt, IoSubsystem, PcResponse, Trap};
 pub use mem::Memory;
 pub use psw::Psw;

@@ -193,3 +193,47 @@ fn fullword_indirect_data_pointer() {
         "modifier added to the address afterwards (Figure 2-15)"
     );
 }
+
+#[test]
+fn pc_program_controlled_io() {
+    use lazarus_ap::{IoSubsystem, PcResponse};
+    // §3.3: CW in R2 (bit 0 selects input/output), data in R1; CC 00 on
+    // success, 01 on interface timeout. Privileged.
+    struct Loopback {
+        last: u32,
+    }
+    impl IoSubsystem for Loopback {
+        fn pc(&mut self, cw: u32, data: Option<u32>) -> PcResponse {
+            match data {
+                Some(v) => {
+                    self.last = v;
+                    let _ = cw;
+                    PcResponse::OutputAccepted
+                }
+                None => PcResponse::Input(self.last.wrapping_add(1)),
+            }
+        }
+    }
+    let mut c = cpu8k();
+    c.io = Some(Box::new(Loopback { last: 0 }));
+    // output: CW bit 0 = 1
+    c.set_r(2, 0x8000_0123);
+    c.set_r(1, 0xCAFE_0000);
+    exec1(&mut c, &[0b11011_001_11101_010]); // PC 1,2
+    assert_eq!(c.psw.cc, CC_ZERO);
+    // input: CW bit 0 = 0 -> loads R1
+    c.set_r(2, 0x0000_0123);
+    run_at(&mut c, 0x200, &[0b11011_001_11101_010], 1);
+    assert_eq!(c.r(1), 0xCAFE_0001);
+    assert_eq!(c.psw.cc, CC_ZERO);
+    // no subsystem attached: handshake timeout, CC 01 (§3.3)
+    let mut c = cpu8k();
+    c.set_r(2, 0x0000_0123);
+    exec1(&mut c, &[0b11011_001_11101_010]);
+    assert_eq!(c.psw.cc, CC_POS);
+    // privileged (§3.3 programming note)
+    let mut c = cpu8k();
+    c.psw.problem_state = true;
+    let t = exec1_err(&mut c, &[0b11011_001_11101_010]);
+    assert!(matches!(t, Trap::UninitializedInterrupt { code: 0x0001, .. }));
+}

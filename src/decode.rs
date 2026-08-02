@@ -73,6 +73,7 @@ pub enum Instr {
     // Status switching / special (§2.5, §9)
     Lps, Spm, Ssm, Svc, Ts, Tsb, Mvh, Ispb,
     Scal, Sret, Lxar, Lxa, Stxar, Stxa, Ldm, Stdm,
+    Pc,
     /// Known encoding, execution not implemented yet.
     NotImplemented(&'static str),
 }
@@ -184,6 +185,7 @@ impl Instr {
             Ts => "TS", Tsb => "TSB", Mvh => "MVH", Ispb => "ISPB",
             Scal => "SCAL", Sret => "SRET", Lxar => "LXAR", Lxa => "LXA",
             Stxar => "STXAR", Stxa => "STXA", Ldm => "LDM", Stdm => "STDM",
+            Pc => "PC",
             NotImplemented(m) => m,
         }
     }
@@ -278,7 +280,7 @@ fn rr2_slot(op5: u8, r1: u8) -> Option<Instr> {
             0b000 => Some(Spm),
             _ => None,
         },
-        0b11011 => Some(NotImplemented("PC")),
+        0b11011 => Some(Pc),
         0b11100 => Some(Nct),
         0b11101 => Some(Lcr),
         _ => None,

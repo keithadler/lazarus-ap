@@ -198,10 +198,12 @@ on executing an unprotected instruction word, IC left at the offender
 (AP-101S behavior, §2.4.1). The Figure 2-20 anomaly notes about CC=10 in
 the old PSW for these interrupts are not replicated.
 
-## I/O-dependent operations — NOT IMPLEMENTED (encodings verified)
+## I/O operations
 
-DIAG, ICR (internal control: timers), PC (program-controlled I/O, §3.3).
-These are the IOP phase. All decode and trap with their mnemonic.
+| Instr | Status | Notes |
+|---|---|---|
+| PC | PARTIAL | §3.3 implemented at the CPU boundary: privileged, CW in R2 (bit 0 input/output), data in R1, CC 00 success / 01 timeout; the subsystem side is a pluggable `IoSubsystem` trait (no subsystem attached = timeout). Appendix I command semantics await the IOP model. **Source conflict:** yaGPC2/nsts-sim-gpc take the CW from R1 and the data from R2; the PoO text says the opposite and is followed here |
+| ICR, DIAG | NOT IMPLEMENTED (encodings verified) | internal-control timers and diagnose need the IOP/hardware model; decode and trap |
 
 ## Addressing-mode gap (PARTIAL)
 
