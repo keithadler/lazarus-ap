@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="853" height="256"
+     viewBox="0 0 853 256" font-family="ui-monospace,SFMono-Regular,Menlo,monospace"
+     font-size="13" role="img" aria-label="python3 tools/labcheck.py">
+  <rect width="853" height="256" rx="8" fill="#12151A"/>
+  <rect width="853" height="40" rx="8" fill="#1A1F26"/>
+  <rect y="32" width="853" height="8" fill="#1A1F26"/>
+  <circle cx="26" cy="20" r="5" fill="#E06C60"/><circle cx="42" cy="20" r="5" fill="#E8B45C"/><circle cx="58" cy="20" r="5" fill="#8FBF6E"/>
+  <text x="82" y="25" fill="#7E8894" font-size="12">python3 tools/labcheck.py</text>
+    <text xml:space="preserve" x="20" y="52" fill="#D6DBE1"><tspan>  routine      input            flight answer      modern</tspan></text>
+  <text xml:space="preserve" x="20" y="92" fill="#D6DBE1"><tspan>  SQRT         2                1.414213           1.414214</tspan></text>
+  <text xml:space="preserve" x="20" y="112" fill="#D6DBE1"><tspan>  SNCS         0.5              [0.479425, 0.877583] [0.479426, 0.877583]</tspan></text>
+  <text xml:space="preserve" x="20" y="132" fill="#D6DBE1"><tspan>  VV6          [1,2,3]·[4,5,6]  32                 32</tspan></text>
+  <text xml:space="preserve" x="20" y="152" fill="#D6DBE1"><tspan>  VV10         [3,4,0]          [0.6, 0.8, 0]      [0.6, 0.8, 0]</tspan></text>
+  <text xml:space="preserve" x="20" y="172" fill="#D6DBE1"><tspan>  MM14         diag(2,4,5)      [0.5, 0, 0, 0, 0.25, 0, 0, 0, 0.2] [0.5, 0, 0, 0, 0.25, 0, 0, 0, 0.2]</tspan></text>
+  <text xml:space="preserve" x="20" y="192" fill="#D6DBE1"><tspan>  DPROD        [2,3,4]          24                 24</tspan></text>
+  <text xml:space="preserve" x="20" y="232" fill="#D6DBE1"><tspan></tspan><tspan fill="#E8B45C">39/39</tspan><tspan fill="#D6DBE1"> routines verified</tspan></text>
+</svg>

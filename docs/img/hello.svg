@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="498" height="236"
+     viewBox="0 0 498 236" font-family="ui-monospace,SFMono-Regular,Menlo,monospace"
+     font-size="13" role="img" aria-label="cargo run --bin lazap -- roms/hello/hello.fcm">
+  <rect width="498" height="236" rx="8" fill="#12151A"/>
+  <rect width="498" height="40" rx="8" fill="#1A1F26"/>
+  <rect y="32" width="498" height="8" fill="#1A1F26"/>
+  <circle cx="26" cy="20" r="5" fill="#E06C60"/><circle cx="42" cy="20" r="5" fill="#E8B45C"/><circle cx="58" cy="20" r="5" fill="#8FBF6E"/>
+  <text x="82" y="25" fill="#7E8894" font-size="12">cargo run --bin lazap -- roms/hello/hello.fcm</text>
+    <text xml:space="preserve" x="20" y="52" fill="#D6DBE1"><tspan>THE BEGINNING</tspan></text>
+  <text xml:space="preserve" x="20" y="72" fill="#D6DBE1"><tspan>          1     HELLO, WORLD!</tspan></text>
+  <text xml:space="preserve" x="20" y="92" fill="#D6DBE1"><tspan>                    2     RON BURKEY SAYS ISN'T THIS FUN?</tspan></text>
+  <text xml:space="preserve" x="20" y="112" fill="#D6DBE1"><tspan>                    4     RON BURKEY SAYS ISN'T THIS FUN?</tspan></text>
+  <text xml:space="preserve" x="20" y="132" fill="#D6DBE1"><tspan>                    6     RON BURKEY SAYS ISN'T THIS FUN?</tspan></text>
+  <text xml:space="preserve" x="20" y="152" fill="#D6DBE1"><tspan>                    8     RON BURKEY SAYS ISN'T THIS FUN?</tspan></text>
+  <text xml:space="preserve" x="20" y="172" fill="#D6DBE1"><tspan>          2     HELLO, WORLD!</tspan></text>
+  <text xml:space="preserve" x="20" y="192" fill="#D6DBE1"><tspan>                    2     RON BURKEY SAYS ISN'T THIS FUN?</tspan></text>
+  <text xml:space="preserve" x="20" y="212" fill="#D6DBE1"><tspan>                    4     RON BURKEY SAYS ISN'T THIS FUN?</tspan></text>
+</svg>

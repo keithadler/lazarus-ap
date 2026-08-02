@@ -59,6 +59,10 @@ jobs:
           set -e
           cargo run -q --release --bin lazap-time -- roms/hello/hello.fcm | tee /tmp/t.txt
           grep -qE 'execution time [0-9]+\.[0-9]+ time units' /tmp/t.txt
+      # The README's terminal cards are generated from real output; they
+      # must not drift from what the binaries actually print.
+      - name: README images are current
+        run: python3 tools/mkshots.py --check
 
   pages:
     name: The resource page is self-contained

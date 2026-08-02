@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="667" height="216"
+     viewBox="0 0 667 216" font-family="ui-monospace,SFMono-Regular,Menlo,monospace"
+     font-size="13" role="img" aria-label="cargo run --bin lazap-time -- roms/hello/hello.fcm --assume-microseconds">
+  <rect width="667" height="216" rx="8" fill="#12151A"/>
+  <rect width="667" height="40" rx="8" fill="#1A1F26"/>
+  <rect y="32" width="667" height="8" fill="#1A1F26"/>
+  <circle cx="26" cy="20" r="5" fill="#E06C60"/><circle cx="42" cy="20" r="5" fill="#E8B45C"/><circle cx="58" cy="20" r="5" fill="#8FBF6E"/>
+  <text x="82" y="25" fill="#7E8894" font-size="12">cargo run --bin lazap-time -- roms/hello/hello.fcm --assume-microseconds</text>
+    <text xml:space="preserve" x="20" y="52" fill="#7FA8E8"><tspan>roms/hello/hello.fcm: Done</tspan></text>
+  <text xml:space="preserve" x="20" y="72" fill="#D6DBE1"><tspan>  instructions   6613  (6455 timed, 158 untimed)</tspan></text>
+  <text xml:space="preserve" x="20" y="92" fill="#D6DBE1"><tspan>  execution time 10970.23 time units</tspan></text>
+  <text xml:space="preserve" x="20" y="112" fill="#D6DBE1"><tspan>  mean           1.659 units/instruction</tspan></text>
+  <text xml:space="preserve" x="20" y="132" fill="#D6DBE1"><tspan>  slowest single SCAL at 24.500 units</tspan></text>
+  <text xml:space="preserve" x="20" y="152" fill="#D6DBE1"><tspan>  --- assuming 1 unit = 1 microsecond (UNVERIFIED) ---</tspan></text>
+  <text xml:space="preserve" x="20" y="172" fill="#D6DBE1"><tspan>  wall time      10.970 ms</tspan></text>
+  <text xml:space="preserve" x="20" y="192" fill="#D6DBE1"><tspan>  40 Hz frames   0.439  (one frame = 25 ms)</tspan></text>
+</svg>

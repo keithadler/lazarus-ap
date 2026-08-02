@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="861" height="256"
+     viewBox="0 0 861 256" font-family="ui-monospace,SFMono-Regular,Menlo,monospace"
+     font-size="13" role="img" aria-label="cargo run --bin lazap-set -- --fault 2">
+  <rect width="861" height="256" rx="8" fill="#12151A"/>
+  <rect width="861" height="40" rx="8" fill="#1A1F26"/>
+  <rect y="32" width="861" height="8" fill="#1A1F26"/>
+  <circle cx="26" cy="20" r="5" fill="#E06C60"/><circle cx="42" cy="20" r="5" fill="#E8B45C"/><circle cx="58" cy="20" r="5" fill="#8FBF6E"/>
+  <text x="82" y="25" fill="#7E8894" font-size="12">cargo run --bin lazap-set -- --fault 2</text>
+    <text xml:space="preserve" x="20" y="52" fill="#D6DBE1"><tspan>AP-101S REDUNDANT SET: 4 PASS + 1 BFS LISTENER</tspan></text>
+  <text xml:space="preserve" x="20" y="72" fill="#D6DBE1"><tspan>fault injected: GPC 2 sensor corrupted</tspan></text>
+  <text xml:space="preserve" x="20" y="92" fill="#D6DBE1"><tspan>GPC | ROLE     | MAILBOXES (heard on buses) | VERDICT | STATE</tspan></text>
+  <text xml:space="preserve" x="20" y="112" fill="#D6DBE1"><tspan>----+----------+----------------------------+---------+------</tspan></text>
+  <text xml:space="preserve" x="20" y="132" fill="#D6DBE1"><tspan>  0 | PASS     |   42   42   </tspan><tspan fill="#E8B45C">13</tspan><tspan fill="#D6DBE1">   42                |  ..X.   | VOTED</tspan></text>
+  <text xml:space="preserve" x="20" y="152" fill="#D6DBE1"><tspan>  1 | PASS     |   42   42   </tspan><tspan fill="#E8B45C">13</tspan><tspan fill="#D6DBE1">   42                |  ..X.   | VOTED</tspan></text>
+  <text xml:space="preserve" x="20" y="172" fill="#D6DBE1"><tspan>  2 | PASS     |   42   42   </tspan><tspan fill="#E8B45C">13</tspan><tspan fill="#D6DBE1">   42                |  XX.X   | VOTED</tspan></text>
+  <text xml:space="preserve" x="20" y="192" fill="#D6DBE1"><tspan>  3 | PASS     |   42   42   </tspan><tspan fill="#E8B45C">13</tspan><tspan fill="#D6DBE1">   42                |  ..X.   | VOTED</tspan></text>
+  <text xml:space="preserve" x="20" y="212" fill="#D6DBE1"><tspan>  4 | BFS shadow |   42   42   </tspan><tspan fill="#E8B45C">13</tspan><tspan fill="#D6DBE1">   42                |  ..X.   | VOTED</tspan></text>
+  <text xml:space="preserve" x="20" y="232" fill="#D6DBE1"><tspan>ACTUATOR force-vote: commands [Some(42), Some(42), Some(</tspan><tspan fill="#E8B45C">13</tspan><tspan fill="#D6DBE1">), Some(42)] -&gt; output 42  (port 2 </tspan><tspan fill="#E8B45C">BYPASSED</tspan><tspan fill="#D6DBE1">)</tspan></text>
+</svg>
