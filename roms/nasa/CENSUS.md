@@ -149,3 +149,5 @@ singular-matrix error (group 4, number 27) is the one error the
 compiler never re-checks at the call site, so it can never dispatch to
 a user handler - it falls through to MM15SN's identity-matrix fallback
 instead. Our halucp implements that exact exclusion.
+| MM12S3 | 3x3 DETERMINANT | R2 in, F0 out (ACALL) | diag(2,3,4) | 24 exact |
+| VV3S3 | VECTOR SUBTRACT | R2,R3 in, R1 out (intrinsic) | [5,7,9]-[1,2,3] | [4,5,6] |
