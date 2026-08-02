@@ -12,9 +12,12 @@ import math, os, struct, subprocess, sys
 sys.path.insert(0, os.path.dirname(__file__))
 from lnk_lite import parse_deck
 
-VAGC = os.environ.get("VAGC", "~/"
-    ""
-    "virtualagc")
+VAGC = os.environ.get(
+    "VAGC",
+    # Point this at your Virtual AGC checkout; see docs/ROADMAP.md
+    # for the fetch-and-build recipe.
+    os.path.expanduser("~/virtualagc"),
+)
 ASM = f"{VAGC}/ASM101S"
 PY = os.environ.get("VENV_PY", f"{os.path.dirname(VAGC)}/venv/bin/python3")
 # The flight sources and their assembled objects are committed in this

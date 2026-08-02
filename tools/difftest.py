@@ -13,9 +13,12 @@ Needs yaGPC2 built (see docs/ROADMAP.md); point YAGPC2 at the binary.
 """
 import json, os, re, subprocess, sys
 
-YAGPC2 = os.environ.get("YAGPC2", "~/"
-    "SESSION/"
-    "scratchpad/virtualagc/yaShuttle/yaGPC2/yaGPC2")
+YAGPC2 = os.environ.get(
+    "YAGPC2",
+    # Point this at your Virtual AGC checkout; see docs/ROADMAP.md
+    # for the fetch-and-build recipe.
+    os.path.expanduser("~/virtualagc/yaShuttle/yaGPC2"),
+)
 
 # Section names can run straight into the offset ("#CREADAC+0000:"),
 # so match lazily up to the offset rather than demanding whitespace.
