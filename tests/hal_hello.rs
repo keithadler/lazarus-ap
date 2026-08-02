@@ -44,15 +44,29 @@ fn real_halsfc_hello_world_runs() {
 ///    golden EXACTLY, so this is an arithmetic bug in one of our §8
 ///    float operations, not an output bug. Hunt: watch stores to the
 ///    ACCEL vector and diff the computation against yaGPC2.
+/// Byte-for-byte parity with the reference emulator (goldens captured
+/// from a locally-built yaGPC2 on the same fixtures).
 #[test]
-#[ignore = "known gaps: column parity + one float-op bug (see doc comment)"]
 fn golden_parity() {
-    let bytes = std::fs::read("roms/p176/176-P.fcm").unwrap();
-    let json = std::fs::read_to_string("roms/p176/176-P-lnk101.json").unwrap();
-    let golden = std::fs::read_to_string("roms/p176/golden.txt").unwrap();
-    let mut cpu = Cpu::new(Memory::full());
-    fcm::boot(&mut cpu, &bytes, Some(&json)).unwrap();
-    let mut ucp = HalUcp::from_symbols_json(&json).unwrap();
-    run_hal(&mut cpu, &mut ucp, 3_000_000);
-    assert_eq!(ucp.output, golden);
+    for (fcm_path, json_path, golden_path) in [
+        (
+            "roms/hello/hello.fcm",
+            "roms/hello/hello-lnk101.json",
+            "roms/hello/golden.txt",
+        ),
+        (
+            "roms/p176/176-P.fcm",
+            "roms/p176/176-P-lnk101.json",
+            "roms/p176/golden.txt",
+        ),
+    ] {
+        let bytes = std::fs::read(fcm_path).unwrap();
+        let json = std::fs::read_to_string(json_path).unwrap();
+        let golden = std::fs::read_to_string(golden_path).unwrap();
+        let mut cpu = Cpu::new(Memory::full());
+        fcm::boot(&mut cpu, &bytes, Some(&json)).unwrap();
+        let mut ucp = HalUcp::from_symbols_json(&json).unwrap();
+        assert_eq!(run_hal(&mut cpu, &mut ucp, 3_000_000), HalRun::Done);
+        assert_eq!(ucp.output, golden, "parity: {fcm_path}");
+    }
 }

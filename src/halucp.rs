@@ -26,6 +26,25 @@ use crate::Halt;
 /// end-of-program").
 pub const SVC_END: u16 = 0x0015;
 
+/// Per-channel output-mechanism state (yaGPC2 halucp.h): a line buffer
+/// addressed by column (so COLUMN/TAB can move backward before the
+/// line commits), deferred positioning, and the WRITE-statement flags.
+#[derive(Default, Clone)]
+struct Chan {
+    column: usize, // 1-based
+    line_buf: Vec<u8>,
+    first_field: bool,
+    suppress_sep: bool,
+    suppress_adv: bool,
+    has_written: bool,
+    /// (down_lines, to_col) applied lazily before the next field.
+    deferred: Option<(u32, usize)>,
+    line_number: usize,
+    /// Whether any field has ever been flushed on this channel — gates
+    /// SKIP's first-ever-WRITE suppression (yaGPC2 everEmittedField).
+    ever_emitted: bool,
+}
+
 pub struct HalUcp {
     pub outrap: u32,
     pub cntrap: u32,
@@ -34,7 +53,15 @@ pub struct HalUcp {
     pub iobuf_addr: u32,
     /// Captured program output (host side of WRITE).
     pub output: String,
+    channel: usize,
+    chans: Vec<Chan>,
 }
+
+/// USA003090 defaults as implemented by yaGPC2: PAGED channels, 132
+/// printable columns, 5-blank field separator, 66 lines per page.
+const LINE_WIDTH: usize = 132;
+const SEP_BLANKS: usize = 5;
+const LINES_PER_PAGE: usize = 66;
 
 impl HalUcp {
     /// Resolve everything from an lnk101 symbols JSON, the way yaGPC2's
@@ -62,6 +89,106 @@ impl HalUcp {
             iocode_addr: iocode,
             iobuf_addr: iobuf,
             output: String::new(),
+            channel: 6,
+            chans: vec![
+                Chan { column: 1, line_number: 1, ..Chan::default() };
+                256
+            ],
+        }
+    }
+
+    fn newline(&mut self, ch: usize) {
+        let c = &mut self.chans[ch];
+        if !c.line_buf.is_empty() {
+            self.output.push_str(&String::from_utf8_lossy(&c.line_buf));
+        }
+        self.output.push('\n');
+        let c = &mut self.chans[ch];
+        c.line_buf.clear();
+        c.line_number += 1;
+        c.column = 1;
+        if c.line_number > LINES_PER_PAGE {
+            self.output.push('\u{c}');
+            self.chans[ch].line_number = 1;
+        }
+    }
+
+    /// Write `text` into the line buffer at 1-based `col`, space-padding
+    /// any gap; overstrike, never truncate what follows.
+    fn buf_write_at(&mut self, ch: usize, col: usize, text: &[u8]) {
+        let c = &mut self.chans[ch];
+        let start = col - 1;
+        if start > c.line_buf.len() {
+            c.line_buf.resize(start, b' ');
+        }
+        for (i, &b) in text.iter().enumerate() {
+            if start + i < c.line_buf.len() {
+                c.line_buf[start + i] = b;
+            } else {
+                c.line_buf.push(b);
+            }
+        }
+    }
+
+    fn flush_positioning(&mut self, ch: usize) {
+        if let Some((down, to_col)) = self.chans[ch].deferred.take() {
+            for _ in 0..down {
+                self.newline(ch);
+            }
+            self.chans[ch].ever_emitted = true;
+            self.chans[ch].column = to_col;
+        }
+    }
+
+    /// Field emission with separator/wrap rules (yaGPC2 emit_field).
+    fn emit_field(&mut self, text: &str, is_char: bool) {
+        let ch = self.channel;
+        self.flush_positioning(ch);
+        let need_sep = !self.chans[ch].first_field && !self.chans[ch].suppress_sep;
+        self.chans[ch].suppress_sep = false;
+        let sep = if need_sep { SEP_BLANKS } else { 0 };
+        let len = text.len();
+        if !is_char {
+            if self.chans[ch].column + sep + len - 1 > LINE_WIDTH {
+                self.newline(ch);
+                let col = self.chans[ch].column;
+                self.buf_write_at(ch, col, text.as_bytes());
+                self.chans[ch].column = col + len;
+            } else {
+                let col = self.chans[ch].column + sep;
+                self.buf_write_at(ch, col, text.as_bytes());
+                self.chans[ch].column = col + len;
+            }
+        } else {
+            if sep > 0 {
+                if self.chans[ch].column + sep > LINE_WIDTH + 1 {
+                    self.newline(ch);
+                } else {
+                    self.chans[ch].column += sep;
+                }
+            }
+            let mut pos = 0;
+            while pos < len {
+                if self.chans[ch].column > LINE_WIDTH {
+                    self.newline(ch);
+                }
+                let remaining = LINE_WIDTH - self.chans[ch].column + 1;
+                let take = remaining.min(len - pos).max(1);
+                let col = self.chans[ch].column;
+                self.buf_write_at(ch, col, &text.as_bytes()[pos..pos + take]);
+                self.chans[ch].column += take;
+                pos += take;
+            }
+        }
+        self.chans[ch].first_field = false;
+    }
+
+    /// Flush any uncommitted line (end of run).
+    pub fn flush(&mut self) {
+        for ch in 0..self.chans.len() {
+            if !self.chans[ch].line_buf.is_empty() {
+                self.newline(ch);
+            }
         }
     }
 
@@ -82,22 +209,22 @@ impl HalUcp {
         let text = match iocode {
             9 => {
                 let v = cpu.mem.read_f(self.iobuf_addr).unwrap_or(0) as i32;
-                format!("{v}")
+                format_integer(v as i64)
             }
             10 => {
                 let v = cpu.mem.read_h(self.iobuf_addr).unwrap_or(0) as i16;
-                format!("{v}")
+                format_integer(v as i64)
             }
             11 => {
                 // EOUT: single-precision IBM hex float (§8 format).
                 let w = cpu.mem.read_f(self.iobuf_addr).unwrap_or(0);
-                format_scalar(ibm_to_f64(crate::float::unpack_short(w)), 7)
+                format_scalar(ibm_to_f64(crate::float::unpack_short(w)), 7, 14)
             }
             12 => {
                 // DOUT: double-precision (register-pair layout).
                 let hi = cpu.mem.read_f(self.iobuf_addr).unwrap_or(0);
                 let lo = cpu.mem.read_f(self.iobuf_addr + 2).unwrap_or(0);
-                format_scalar(ibm_to_f64(crate::float::unpack_long(hi, lo)), 16)
+                format_scalar(ibm_to_f64(crate::float::unpack_long(hi, lo)), 16, 23)
             }
             13 => {
                 // Descriptor halfword: current length in the low byte
@@ -123,21 +250,119 @@ impl HalUcp {
             }
             other => format!("[IOCODE={other}?]"),
         };
-        if !self.output.is_empty() && !self.output.ends_with('\n') {
-            self.output.push(' ');
-        }
-        self.output.push_str(&text);
+        self.emit_field(&text, iocode == 13);
     }
 
     fn handle_control(&mut self, cpu: &Cpu) {
-        // Control codes (yaGPC2 handle_control): 0-3 channel/IOINIT
-        // setup, 4 = LINE advance, 5 = COLUMN, 6 = TAB. Core subset:
-        // LINE emits a newline; COLUMN/TAB emit a separator; setup is
-        // silent. (Column-accurate pagination is the parity work.)
+        // Control codes (yaGPC2 handle_control): 0/1 = READ IOINIT
+        // (input unsupported here), 2/3 = WRITE IOINIT, 4 = LINE,
+        // 5 = COLUMN (absolute), 6 = TAB (relative, signed).
         let iocode = cpu.mem.read_h(self.iocode_addr).unwrap_or(0);
+        let mut param = cpu.mem.read_h(self.iobuf_addr).unwrap_or(0) as i32;
+        if iocode == 6 && param & 0x8000 != 0 {
+            param -= 0x10000;
+        }
         match iocode {
-            4 => self.output.push('\n'),
-            5 | 6 => self.output.push(' '),
+            0 | 1 => self.channel = param as usize & 0xFF,
+            2 | 3 => {
+                let ch = param as usize & 0xFF;
+                self.channel = ch;
+                if self.chans[ch].deferred.is_some() {
+                    self.flush_positioning(ch);
+                }
+                if !self.chans[ch].has_written {
+                    self.chans[ch].has_written = true;
+                    self.chans[ch].suppress_adv = false;
+                    let col = self.chans[ch].column;
+                    self.chans[ch].deferred = Some((0, col));
+                } else if self.chans[ch].suppress_adv {
+                    self.chans[ch].suppress_adv = false;
+                    let col = self.chans[ch].column;
+                    self.chans[ch].deferred = Some((0, col));
+                } else {
+                    self.chans[ch].deferred = Some((1, 1));
+                }
+                self.chans[ch].first_field = true;
+                self.chans[ch].suppress_sep = false;
+            }
+            4 => {
+                // LINE(n), paged: forward to line n, wrapping the page.
+                let ch = self.channel;
+                let cur = self.chans[ch].line_number as i32;
+                let delta = if param >= cur {
+                    param - cur
+                } else {
+                    (LINES_PER_PAGE as i32 - cur) + param
+                };
+                if let Some((_, col)) = self.chans[ch].deferred {
+                    self.chans[ch].deferred = Some((delta as u32, col));
+                } else {
+                    for _ in 0..delta {
+                        self.newline(ch);
+                    }
+                }
+            }
+            5 => {
+                // COLUMN(n), absolute; lazy placement via the deferred
+                // slot when one is pending.
+                let ch = self.channel;
+                let col = (param.max(1)) as usize;
+                match self.chans[ch].deferred {
+                    Some((down, _)) => self.chans[ch].deferred = Some((down, col)),
+                    None => self.chans[ch].column = col,
+                }
+                self.chans[ch].suppress_sep = true;
+            }
+            6 => {
+                // TAB(n), relative (signed).
+                let ch = self.channel;
+                match self.chans[ch].deferred {
+                    Some((down, col)) => {
+                        let t = (col as i32 + param).max(1) as usize;
+                        self.chans[ch].deferred = Some((down, t));
+                    }
+                    None => {
+                        let t = (self.chans[ch].column as i32 + param).max(1) as usize;
+                        self.chans[ch].column = t;
+                    }
+                }
+                self.chans[ch].suppress_sep = true;
+            }
+            7 => {
+                // PAGE(n): n pages of line advances.
+                let ch = self.channel;
+                if param > 0 {
+                    let down = param as u32 * LINES_PER_PAGE as u32;
+                    match self.chans[ch].deferred {
+                        Some((_, col)) => self.chans[ch].deferred = Some((down, col)),
+                        None => {
+                            for _ in 0..down {
+                                self.newline(ch);
+                            }
+                        }
+                    }
+                }
+            }
+            8 => {
+                // SKIP(n). A device's true first-ever WRITE performs
+                // only initial positioning — the runtime's own row-
+                // separator SKIP is suppressed until any field has ever
+                // been emitted (yaGPC2's everEmittedField gate).
+                let ch = self.channel;
+                if param >= 0 {
+                    match self.chans[ch].deferred {
+                        Some((_, col)) if self.chans[ch].ever_emitted => {
+                            self.chans[ch].deferred = Some((param as u32, col));
+                        }
+                        Some(_) => {}
+                        None => {
+                            for _ in 0..param {
+                                self.newline(ch);
+                            }
+                        }
+                    }
+                }
+            }
             _ => {}
         }
     }
@@ -156,12 +381,17 @@ fn ibm_to_f64(u: crate::float::Unpacked) -> f64 {
     }
 }
 
+/// Integers right-justify in an 11-column field (yaGPC2 format_integer).
+fn format_integer(v: i64) -> String {
+    format!("{v:>11}")
+}
+
 /// HAL/S scalar output format (yaGPC2 format_scalar): sign column,
 /// one integer digit, `frac_digits` decimals, two-digit signed
-/// exponent. Zero prints as " 0.0".
-fn format_scalar(v: f64, frac_digits: usize) -> String {
+/// exponent. Zero prints as " 0.0" left-justified in the field width.
+fn format_scalar(v: f64, frac_digits: usize, total_width: usize) -> String {
     if v == 0.0 {
-        return " 0.0".to_string();
+        return format!("{:<total_width$}", " 0.0");
     }
     let sign = if v < 0.0 { '-' } else { ' ' };
     let av = v.abs();
@@ -211,6 +441,7 @@ pub fn run_hal(cpu: &mut Cpu, ucp: &mut HalUcp, max_steps: usize) -> HalRun {
                 let ea = ((cpu.psw.ea_high as u32) << 15) | (code as u32 & 0x7FFF);
                 let svc = cpu.mem.read_h(ea).unwrap_or(0);
                 if svc == SVC_END {
+                    ucp.flush();
                     return HalRun::Done;
                 }
                 // other builtin SVC: continue (no-op)
@@ -278,7 +509,10 @@ OUTSTUB: BCR 7,7
         // (single-buffer protocol: one value per trap)
         let r = run_hal_with_swap(&mut cpu, &mut ucp, iobuf);
         assert_eq!(r, HalRun::Done);
-        assert_eq!(ucp.output, "HI THERE 4242");
+        // Field layout per the ported emit_field: with no IOINIT in this
+        // synthetic program, both fields take the default 5-blank
+        // separator; the integer right-justifies in its 11-column field.
+        assert_eq!(ucp.output, "     HI THERE            4242\n");
     }
 
     fn run_hal_with_swap(cpu: &mut Cpu, ucp: &mut HalUcp, iobuf: u32) -> HalRun {
@@ -296,6 +530,7 @@ OUTSTUB: BCR 7,7
                     let ea =
                         ((cpu.psw.ea_high as u32) << 15) | (code as u32 & 0x7FFF);
                     if cpu.mem.read_h(ea).unwrap_or(0) == SVC_END {
+                        ucp.flush();
                         return HalRun::Done;
                     }
                 }
