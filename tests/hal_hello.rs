@@ -70,3 +70,19 @@ fn golden_parity() {
         assert_eq!(ucp.output, golden, "parity: {fcm_path}");
     }
 }
+
+/// READ support: the read_write fixture (real HALSFC program) consumes
+/// "42, 3.14" through INTRAP and echoes both values. Golden from the
+/// locally-built yaGPC2 with the same stdin.
+#[test]
+fn read_write_parity() {
+    let bytes = std::fs::read("roms/read_write/read_write.fcm").unwrap();
+    let json = std::fs::read_to_string("roms/read_write/read_write-lnk101.json").unwrap();
+    let golden = std::fs::read_to_string("roms/read_write/golden.txt").unwrap();
+    let mut cpu = Cpu::new(Memory::full());
+    fcm::boot(&mut cpu, &bytes, Some(&json)).unwrap();
+    let mut ucp = HalUcp::from_symbols_json(&json).unwrap();
+    ucp.input = "42, 3.14\n".to_string();
+    assert_eq!(run_hal(&mut cpu, &mut ucp, 3_000_000), HalRun::Done);
+    assert_eq!(ucp.output, golden);
+}

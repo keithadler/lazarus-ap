@@ -61,6 +61,14 @@ fn run_fcm(file: &str, steps: u64) {
     fcm::boot(&mut cpu, &bytes, json.as_deref()).unwrap_or_else(|e| {
         die(&format!("image load failed: {e:?}"))
     });
+    let stdin_data = {
+        use std::io::IsTerminal;
+        if std::io::stdin().is_terminal() {
+            String::new()
+        } else {
+            std::io::read_to_string(std::io::stdin()).unwrap_or_default()
+        }
+    };
     let mut ucp = match json.as_deref().and_then(HalUcp::from_symbols_json) {
         Some(u) => u,
         None => {
@@ -68,6 +76,7 @@ fn run_fcm(file: &str, steps: u64) {
             HalUcp::new(u32::MAX >> 1, 0, 0, 0)
         }
     };
+    ucp.input = stdin_data;
     let r = run_hal(&mut cpu, &mut ucp, steps as usize);
     print!("{}", ucp.output);
     if !ucp.output.ends_with('\n') {

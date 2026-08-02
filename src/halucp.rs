@@ -53,8 +53,16 @@ pub struct HalUcp {
     pub iobuf_addr: u32,
     /// Captured program output (host side of WRITE).
     pub output: String,
+    /// Program input (host side of READ): prime before running.
+    pub input: String,
     channel: usize,
     chans: Vec<Chan>,
+    /// One-shot suppression of the next trap check: after a delivered
+    /// input value the INTRAP stub itself must execute (yaGPC2
+    /// halucp_is_trap_addr's skipTrap).
+    skip_trap: bool,
+    read_terminated: bool,
+    input_pos: usize,
 }
 
 /// USA003090 defaults as implemented by yaGPC2: PAGED channels, 132
@@ -89,11 +97,15 @@ impl HalUcp {
             iocode_addr: iocode,
             iobuf_addr: iobuf,
             output: String::new(),
+            input: String::new(),
             channel: 6,
             chans: vec![
                 Chan { column: 1, line_number: 1, ..Chan::default() };
                 256
             ],
+            skip_trap: false,
+            read_terminated: false,
+            input_pos: 0,
         }
     }
 
@@ -195,13 +207,158 @@ impl HalUcp {
     /// Call with the CPU's next instruction address before each step:
     /// performs the host side of a trap hit. The stub instruction still
     /// executes (yaGPC2's check returns 'continue').
-    pub fn check_trap(&mut self, cpu: &Cpu, nia: u32) {
+    pub fn check_trap(&mut self, cpu: &mut Cpu, nia: u32) {
+        if self.skip_trap {
+            self.skip_trap = false;
+            return;
+        }
         if nia == self.outrap {
             self.handle_output(cpu);
         } else if nia == self.cntrap {
             self.handle_control(cpu);
+        } else if nia == self.intrap {
+            self.handle_input(cpu);
         }
-        // INTRAP (READ) is out of scope for the core subset.
+    }
+
+    /// Next input field (yaGPC2 extract_next_field): skip whitespace;
+    /// ';' terminates the READ, ',' is a null field, quoted strings for
+    /// character/bit codes, otherwise a token up to comma/whitespace
+    /// (with one trailing comma consumed).
+    fn next_field(&mut self, iocode: u16) -> Option<Field> {
+        let b = self.input.as_bytes();
+        let mut i = self.input_pos;
+        while i < b.len() && (b[i] as char).is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= b.len() {
+            self.input_pos = i;
+            return None; // exhausted: EOF
+        }
+        match b[i] {
+            b';' => {
+                self.input_pos = i + 1;
+                Some(Field::Terminated)
+            }
+            b',' => {
+                self.input_pos = i + 1;
+                Some(Field::Null)
+            }
+            b'\'' if iocode == 13 || iocode == 8 => {
+                let mut v = String::new();
+                let mut p = i + 1;
+                while p < b.len() {
+                    if b[p] == b'\'' {
+                        if p + 1 < b.len() && b[p + 1] == b'\'' {
+                            v.push('\'');
+                            p += 2;
+                        } else {
+                            p += 1;
+                            break;
+                        }
+                    } else {
+                        v.push(b[p] as char);
+                        p += 1;
+                    }
+                }
+                self.input_pos = p;
+                self.consume_trailing_comma();
+                Some(Field::Value(v))
+            }
+            _ => {
+                let start = i;
+                while i < b.len()
+                    && b[i] != b','
+                    && b[i] != b';'
+                    && !(b[i] as char).is_ascii_whitespace()
+                {
+                    i += 1;
+                }
+                let v = self.input[start..i].to_string();
+                self.input_pos = i;
+                self.consume_trailing_comma();
+                Some(Field::Value(v))
+            }
+        }
+    }
+
+    fn consume_trailing_comma(&mut self) {
+        let b = self.input.as_bytes();
+        let mut i = self.input_pos;
+        while i < b.len() && (b[i] == b' ' || b[i] == b'\t') {
+            i += 1;
+        }
+        if i < b.len() && b[i] == b',' {
+            i += 1;
+        }
+        self.input_pos = i;
+    }
+
+    /// INTRAP: deliver the next input field into IOBUF per the input
+    /// IOCODE (yaGPC2 handle_input/write_input_value), then let the
+    /// stub execute once.
+    fn handle_input(&mut self, cpu: &mut Cpu) {
+        let iocode = cpu.mem.read_h(self.iocode_addr).unwrap_or(0);
+        if self.read_terminated {
+            self.skip_trap = true;
+            return;
+        }
+        match self.next_field(iocode) {
+            Some(Field::Terminated) => {
+                self.read_terminated = true;
+                self.skip_trap = true;
+            }
+            Some(Field::Null) | None => {
+                // null field leaves the target unchanged; EOF likewise
+                // (the EOF error path is ON ERROR territory, unported)
+                self.skip_trap = true;
+            }
+            Some(Field::Value(text)) => {
+                match iocode {
+                    9 => {
+                        let v = text.trim().parse::<i64>().unwrap_or(0);
+                        let _ = cpu.mem.write_f(self.iobuf_addr, v as u32);
+                    }
+                    10 => {
+                        let v = text.trim().parse::<i64>().unwrap_or(0);
+                        let _ = cpu.mem.write_h(self.iobuf_addr, v as u16);
+                    }
+                    11 => {
+                        let v = text.trim().parse::<f64>().unwrap_or(0.0);
+                        let _ = cpu.mem.write_f(self.iobuf_addr, f64_to_ibm(v).0);
+                    }
+                    12 => {
+                        let (hi, lo) = f64_to_ibm(text.trim().parse().unwrap_or(0.0));
+                        let _ = cpu.mem.write_f(self.iobuf_addr, hi);
+                        let _ = cpu.mem.write_f(self.iobuf_addr + 2, lo);
+                    }
+                    13 => {
+                        // CIN: descriptor high byte = max length; write
+                        // the new length and packed characters.
+                        let desc = cpu.mem.read_h(self.iobuf_addr).unwrap_or(0);
+                        let max = (desc >> 8) as usize;
+                        let len = if max > 0 { text.len().min(max) } else { text.len() };
+                        let _ = cpu
+                            .mem
+                            .write_h(self.iobuf_addr, ((max as u16) << 8) | len as u16);
+                        let bytes = text.as_bytes();
+                        for i in 0..len {
+                            let hw_addr = self.iobuf_addr + 1 + (i as u32) / 2;
+                            let old = cpu.mem.read_h(hw_addr).unwrap_or(0);
+                            let nb = bytes[i] as u16;
+                            let new = if i % 2 == 0 {
+                                (nb << 8) | (old & 0xFF)
+                            } else {
+                                (old & 0xFF00) | nb
+                            };
+                            let _ = cpu.mem.write_h(hw_addr, new);
+                        }
+                    }
+                    _ => {}
+                }
+                self.skip_trap = true;
+            }
+        }
     }
 
     fn handle_output(&mut self, cpu: &Cpu) {
@@ -263,7 +420,10 @@ impl HalUcp {
             param -= 0x10000;
         }
         match iocode {
-            0 | 1 => self.channel = param as usize & 0xFF,
+            0 | 1 => {
+                self.channel = param as usize & 0xFF;
+                self.read_terminated = false;
+            }
             2 | 3 => {
                 let ch = param as usize & 0xFF;
                 self.channel = ch;
@@ -366,6 +526,36 @@ impl HalUcp {
             _ => {}
         }
     }
+}
+
+enum Field {
+    Value(String),
+    Null,
+    Terminated,
+}
+
+/// f64 -> IBM hexadecimal float (long form; short is the high word).
+/// Truncating, like the hardware conversions.
+fn f64_to_ibm(v: f64) -> (u32, u32) {
+    if v == 0.0 {
+        return (0, 0);
+    }
+    let neg = v < 0.0;
+    let mut av = v.abs();
+    let mut ch: i32 = 64;
+    while av >= 1.0 {
+        av /= 16.0;
+        ch += 1;
+    }
+    while av < 1.0 / 16.0 {
+        av *= 16.0;
+        ch -= 1;
+    }
+    let frac = (av * (1u64 << 56) as f64) as u64; // 14 hex digits
+    let hi = ((neg as u32) << 31)
+        | ((ch.clamp(0, 127) as u32) << 24)
+        | ((frac >> 32) as u32 & 0x00FF_FFFF);
+    (hi, frac as u32)
 }
 
 fn ibm_to_f64(u: crate::float::Unpacked) -> f64 {
