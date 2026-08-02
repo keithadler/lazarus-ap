@@ -156,15 +156,62 @@ the source.
 | [roms/nasa/CENSUS.md](roms/nasa/CENSUS.md) | The resurrection scoreboard |
 | [roms/nasa/DEFECTS.md](roms/nasa/DEFECTS.md) | Defect report, filed as you would today |
 
-## Standing on shoulders
+## Thanks
 
-The recovered artifacts this project depends on — the AP-101S manuals,
-the HAL/S compiler source, the assembler, the fixture programs — exist
-because of **Ron Burkey's Virtual AGC project** and **Don Schmidt's**
-AP-101S emulation work. Lazarus AP cites their work throughout and
-cross-checks against it; the goal is not to duplicate it but to carry it
-further: a complete, verified, runnable resurrection of the machine, its
-languages, its toolchain, and its flight mathematics.
+None of this is a solo achievement, and most of the people who made it
+possible have no idea this project exists.
+
+**Ron Burkey**, and the **Virtual AGC** project. Everything here rests
+on his work. The HAL/S-FC compiler, the ASM101S assembler, the 205
+routines of the flight runtime library, the fixture programs, the
+yaGPC2 cross-check emulator, the scanned AP-101S manuals — he found,
+restored, transcribed and published all of it, over decades, for free.
+This project builds on top of that and checks itself against it: the
+fixture programs were verified against his yaGPC2 instruction by
+instruction, and matched exactly.
+
+**Don Schmidt**, whose `nsts-sim-gpc` AP-101S emulation work is the
+lineage yaGPC2 descends from.
+
+**The IBM Federal Systems Division engineers** who designed the AP-101S
+and then wrote 85-C67-001, the *Principles of Operation*. They
+documented their machine so carefully that it can be rebuilt from
+paper, forty years on, by people they never met. Almost no hardware of
+that era is so well described. Every instruction in `src/` cites their
+pages.
+
+**The IBM Space Shuttle onboard software team in Houston**, who wrote
+the flight software and whose defect rate remains a benchmark the
+industry still quotes and rarely reaches. Their runtime library is the
+code that runs in this repository. It still computes correctly, first
+time, on an emulator built from their documentation — which is its own
+kind of tribute.
+
+**The HAL/S language team at Intermetrics**, who built a language for
+people writing software that could not fail, complete with a compiler
+that printed how long each statement would take. That timing table is
+now `src/timing.rs`.
+
+**NASA and Rockwell International**, and everyone who kept the Shuttle
+software honest for thirty years and 135 flights.
+
+**ibiblio.org at the University of North Carolina**, for hosting the
+Apollo and Shuttle archives without which none of this material would
+be reachable at all.
+
+**The crews.** Every line of the software emulated here was, at some
+point, something that seven people trusted with their lives.
+
+And **Keith Adler**, who on 2 August 2026 at 12:09 PDT ran the
+Shuttle's own square-root routine for the first time since Atlantis
+came home.
+
+*A note on how this was built: the emulator, tools and documentation in
+this repository were written by Claude (Anthropic) working under human
+direction — the same disclosure Virtual AGC's own yaGPC2 makes. The
+research standard in [CONTRIBUTING.md](CONTRIBUTING.md) exists
+precisely because a machine writing code about a machine nobody can
+test any more needs a strict rule against plausible invention.*
 
 ## License
 

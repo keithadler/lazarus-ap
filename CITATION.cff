@@ -19,6 +19,8 @@ keywords:
   - history of computing
   - retrocomputing
 license: GPL-2.0-or-later
+version: "1.0.0"
+date-released: "2026-08-02"
 repository-code: "https://github.com/USER/lazarus-ap"
 references:
   - type: report

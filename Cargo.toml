@@ -1,6 +1,6 @@
 [package]
 name = "lazarus-ap"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 description = "Test-driven emulator of the IBM AP-101S Space Shuttle general-purpose computer"
 license = "MIT"
