@@ -75,3 +75,20 @@ jobs:
           ! grep -qE '<(script|link|img)[^>]+(src|href)="https?:' docs/index.html
           ! grep -qE '&(mdash|rsquo|middot);' <(grep -oE "textContent = [^;]+" docs/index.html || true)
           echo "docs/index.html: self-contained, $(wc -c < docs/index.html) bytes"
+
+  wasm:
+    name: The emulator builds for the browser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - run: cargo build --target wasm32-unknown-unknown --release
+      - name: Exports the browser console needs
+        run: |
+          set -e
+          for f in boot step state output peek set_new set_step set_state buf_reserve; do
+            grep -q "$f" target/wasm32-unknown-unknown/release/lazarus_ap.wasm || exit 1
+          done
+          echo "wasm: $(wc -c < target/wasm32-unknown-unknown/release/lazarus_ap.wasm) bytes, all exports present"

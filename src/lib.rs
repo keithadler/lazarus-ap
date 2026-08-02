@@ -26,6 +26,8 @@ pub mod iop;
 pub mod mem;
 pub mod psw;
 pub mod trace;
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
 
 pub use cpu::{Cpu, Halt, IoSubsystem, PcResponse, Trap};
 pub use mem::Memory;

@@ -5,7 +5,13 @@ edition = "2021"
 description = "Test-driven emulator of the IBM AP-101S Space Shuttle general-purpose computer"
 license = "MIT"
 
-[dependencies]
-
 [lib]
 path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"

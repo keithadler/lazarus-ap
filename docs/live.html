@@ -1,0 +1,165 @@
+<title>Lazarus AP &mdash; live emulator</title>
+<style>
+:root{--ground:#E8E9E6;--panel:#DCDEDA;--ink:#1B1D1F;--dim:#4A5157;--line:#B0B5B0;
+ --accent:#0B3D91;--accent-ink:#fff;--amber:#8A5200;--crt-bg:#111A12;--crt-ink:#5BE07E}
+@media(prefers-color-scheme:dark){:root{--ground:#101418;--panel:#171C21;--ink:#D6DCE1;
+ --dim:#7E8A93;--line:#28313A;--accent:#7FB2FF;--accent-ink:#0A1420;--amber:#F0A93B;
+ --crt-bg:#0A110C;--crt-ink:#5BE07E}}
+*{box-sizing:border-box}
+body{background:var(--ground);color:var(--ink);margin:0;padding:20px;
+ font:15px/1.6 Georgia,serif}
+.mono{font-family:ui-monospace,Menlo,monospace;font-variant-numeric:tabular-nums}
+.wrap{max-width:940px;margin:0 auto}
+h1{font-size:22px;font-weight:400;margin:0 0 6px}
+.sub{color:var(--dim);font-size:14px;margin:0 0 18px}
+.placard{font:700 10px/1.4 system-ui,sans-serif;letter-spacing:.18em;text-transform:uppercase;
+ color:var(--dim);margin:0 0 8px;border-bottom:1px solid var(--line);padding-bottom:5px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:3px;padding:12px 14px}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:720px){.row{grid-template-columns:1fr}}
+button{background:var(--ground);color:var(--ink);border:1px solid var(--line);border-radius:2px;
+ padding:6px 14px;font:700 12px/1.4 system-ui,sans-serif;text-transform:uppercase;
+ letter-spacing:.04em;cursor:pointer}
+button.p{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+button:hover{border-color:var(--accent)}
+.controls{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin:0 0 14px}
+.crt{background:var(--crt-bg);color:var(--crt-ink);border-radius:3px;padding:12px 14px;
+ min-height:150px;white-space:pre-wrap;font:13px/1.55 ui-monospace,Menlo,monospace}
+table{width:100%;border-collapse:collapse;font-size:13.5px}
+td{padding:3px 6px;border-bottom:1px solid var(--line)}
+tr:last-child td{border-bottom:none}
+.rn{color:var(--dim);width:3ch}
+.chg{color:var(--amber);font-weight:700}
+.gpcs{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:8px;margin-top:10px}
+.g{background:var(--ground);border:1px solid var(--line);border-left:3px solid var(--line);
+ border-radius:0 3px 3px 0;padding:9px 11px;font-size:12.5px}
+.g.bad{border-left-color:var(--amber)}
+.g.ok{border-left-color:var(--accent)}
+.g b{display:block;font:700 11px/1.4 system-ui,sans-serif;letter-spacing:.05em;margin-bottom:4px}
+.note{color:var(--dim);font-size:13px;margin-top:10px}
+a{color:var(--accent)}
+</style>
+<div class="wrap">
+<h1>Lazarus AP &mdash; the emulator itself, running in your browser</h1>
+<p class="sub">Not a recording. The AP-101S emulator is compiled to WebAssembly and
+executing here: 228&nbsp;KB of machine, running real flight-compiler output.
+<a href="index.html">&larr; back to the guided resource</a></p>
+
+<div class="controls">
+  <button class="p" id="run">Run</button>
+  <button id="step1">Step</button>
+  <button id="step100">+100</button>
+  <button id="reset">Reset</button>
+  <span class="mono" id="status" style="color:var(--dim)"></span>
+</div>
+
+<div class="row">
+  <section class="panel">
+    <p class="placard">Program output &mdash; LAZARUS.hal, compiled by the Shuttle's own compiler</p>
+    <div class="crt mono" id="out"></div>
+  </section>
+  <section class="panel">
+    <p class="placard">Machine state</p>
+    <table class="mono" id="regs"></table>
+    <p class="note">Address <b class="mono" id="ic"></b> &middot; next <b class="mono" id="mn"></b>
+    &middot; condition code <b class="mono" id="cc"></b></p>
+  </section>
+</div>
+
+<section class="panel" style="margin-top:14px">
+  <p class="placard">The redundant set &mdash; five computers, live</p>
+  <div class="controls" style="margin:0">
+    <button class="p" id="vrun">Run the vote</button>
+    <button id="vfault">Fault GPC 2</button>
+    <button id="vkill">Kill GPC 1</button>
+    <button id="vclean">No fault</button>
+    <span class="mono" id="vstatus" style="color:var(--dim)"></span>
+  </div>
+  <div class="gpcs" id="gpcs"></div>
+  <p class="note mono" id="act"></p>
+</section>
+<p class="note">Built with <span class="mono">cargo build --target wasm32-unknown-unknown
+--release</span> &mdash; no JavaScript framework, no bundler, no dependencies.</p>
+</div>
+<script>
+const dec = new TextDecoder(), enc = new TextEncoder();
+let M, X, timer = null, vtimer = null, prev = null;
+const VERDICT = 311;      // VERDICT label address in the demo image
+function readBuf(){ const p = X.buf_ptr(), n = X.buf_len();
+  return dec.decode(new Uint8Array(M.buffer, p, n)); }
+function writeBuf(bytes){ const p = X.buf_reserve(bytes.length);
+  new Uint8Array(M.buffer, p, bytes.length).set(bytes); }
+function b64(s){ const b = atob(s); const a = new Uint8Array(b.length);
+  for (let i=0;i<b.length;i++) a[i]=b.charCodeAt(i); return a; }
+
+async function main(){
+  const [wasm, img] = await Promise.all([
+    fetch('wasm/lazarus_ap.wasm').then(r=>r.arrayBuffer()),
+    fetch('wasm/LAZARUS.b64').then(r=>r.text())
+  ]);
+  const inst = await WebAssembly.instantiate(wasm, {});
+  X = inst.instance.exports; M = X.memory;
+  boot(b64(img.trim()));
+  X.set_new(2, 5); renderSet();
+}
+function boot(image){
+  writeBuf(image);
+  // entry point and trap addresses from the linker's symbol table
+  X.boot(65892, 65806, 65858, 398, 400);
+  prev = null; render();
+}
+function render(){
+  X.state(); const s = JSON.parse(readBuf());
+  X.output(); const out = readBuf();
+  document.getElementById('out').textContent = out || '(no output yet)';
+  document.getElementById('ic').textContent = s.ic.toString(16).toUpperCase().padStart(5,'0');
+  document.getElementById('mn').textContent = s.m;
+  document.getElementById('cc').textContent = ['zero','positive','&mdash;','negative'][s.cc];
+  document.getElementById('status').textContent = s.done ? 'program complete' : 'running';
+  let h = '';
+  for (let i=0;i<8;i++){
+    const chg = prev && prev[i] !== s.r[i];
+    h += `<tr><td class="rn">R${i}</td><td class="${chg?'chg':''}">${s.r[i]}</td></tr>`;
+  }
+  document.getElementById('regs').innerHTML = h;
+  prev = s.r; return s.done;
+}
+function renderSet(){
+  X.set_state(VERDICT); const st = JSON.parse(readBuf());
+  document.getElementById('gpcs').innerHTML = st.gpcs.map((g,i)=>{
+    const role = i===4 ? 'BFS SHADOW' : 'GPC '+i;
+    const cls = g.dead ? '' : (g.v ? 'ok' : '');
+    const vs = g.v ? [0,1,2,3].map(b=>(g.v>>b)&1?'X':'.').join('') : '....';
+    return `<div class="g ${g.v && i===2 ? 'bad':cls}"><b>${role}</b>
+      <span class="mono">[${g.m.join(' ')}]</span><br>
+      <span class="mono" style="color:var(--dim)">votes ${vs}</span><br>
+      ${g.dead?'dead':(g.v? (i===2?'votes vs. world':'voted: gpc 2 out') :'running')}</div>`;
+  }).join('');
+  document.getElementById('act').textContent = st.act < 0 ? 'actuator: no commands yet'
+    : `actuator &rarr; surface ${st.act}` + (st.byp.length ? `  (port ${st.byp.join(',')} bypassed)` : '');
+}
+document.getElementById('run').onclick = function(){
+  if (timer){ clearInterval(timer); timer=null; this.textContent='Run'; return; }
+  this.textContent='Hold';
+  timer = setInterval(()=>{ X.step(20); if (render()){ clearInterval(timer); timer=null;
+    document.getElementById('run').textContent='Run'; } }, 40);
+};
+document.getElementById('step1').onclick = ()=>{ X.step(1); render(); };
+document.getElementById('step100').onclick = ()=>{ X.step(100); render(); };
+document.getElementById('reset').onclick = ()=> location.reload();
+function runSet(){
+  if (vtimer){ clearInterval(vtimer); vtimer=null;
+    document.getElementById('vrun').textContent='Run the vote'; return; }
+  document.getElementById('vrun').textContent='Hold';
+  let t = 0;
+  vtimer = setInterval(()=>{ X.set_step(20); t += 20; renderSet();
+    document.getElementById('vstatus').textContent = 'tick '+t;
+    if (t > 1600){ clearInterval(vtimer); vtimer=null;
+      document.getElementById('vrun').textContent='Run the vote'; } }, 40);
+}
+document.getElementById('vrun').onclick = runSet;
+document.getElementById('vfault').onclick = ()=>{ X.set_new(2,5); renderSet(); };
+document.getElementById('vkill').onclick  = ()=>{ X.set_new(5,1); renderSet(); };
+document.getElementById('vclean').onclick = ()=>{ X.set_new(5,5); renderSet(); };
+main();
+</script>
