@@ -279,6 +279,85 @@ h2.sect{font-size:22px;font-weight:400;margin:0 0 14px}
       an emulator like this one is now, as far as we know, the only place these
       instructions still run.</p></div>
   </div>
+  <h2 class="sect" id="crew">The crew station &mdash; keyboard and CRT</h2>
+  <p style="max-width:70ch;margin:0 0 14px">This is how astronauts talked to the
+  computers. There was no keyboard <i>on</i> a GPC &mdash; the crew typed on
+  <b>Display Electronics Unit</b> keyboards, and every keystroke travelled a serial
+  data bus to whichever computer was driving that screen. The panel below replays a
+  real session on this emulator: each key you see light up was queued in the DEU,
+  polled across the display bus by a bus-control program, and delivered into the
+  GPC&rsquo;s memory &mdash; the numbers under &ldquo;GPC heard&rdquo; are read out
+  of that memory, not the keyboard.</p>
+  <div class="controls">
+    <button id="k0">|&#8678;</button>
+    <button id="kplay" class="primary">Type the sequence</button>
+    <input type="range" id="kscrub" min="0" value="0" aria-label="keystroke timeline">
+    <span class="stepnum mono" id="kstep"></span>
+  </div>
+  <div class="crewgrid">
+    <div class="panel">
+      <p class="placard">CRT &mdash; DEU display</p>
+      <div class="crt mono" id="kcrt" style="min-height:150px"></div>
+      <p class="hint">Painted by the GPC over the bus. On the orbiter these were
+      green monochrome CRTs; three of them, any of which could be assigned to any
+      computer with the GPC/CRT key.</p>
+    </div>
+    <div class="panel">
+      <p class="placard">DPS keyboard &mdash; 32 keys</p>
+      <div class="kbd" id="kbd"></div>
+      <p class="hint" id="khint">Crew sequences read like commands: <b>OPS&nbsp;201&nbsp;PRO</b>
+      selects a major mode; <b>ITEM&nbsp;36&nbsp;+12&nbsp;EXEC</b> sets item 36 to 12.</p>
+      <p class="placard" style="margin-top:12px">GPC heard (over the bus)</p>
+      <div class="mono" id="kheard" style="font-size:13px;min-height:2.4em"></div>
+    </div>
+  </div>
+  <p class="hint" style="margin:10px 0 40px">Run it live in a terminal:
+  <span class="mono">cargo run --bin lazap-dps</span> &mdash; type on your own
+  keyboard and watch the emulated GPC poll your keystrokes.</p>
+  <style>
+  .crewgrid{display:grid;grid-template-columns:minmax(280px,1fr) minmax(260px,.9fr);gap:14px}
+  @media(max-width:760px){.crewgrid{grid-template-columns:1fr}}
+  .kbd{display:grid;grid-template-columns:repeat(4,1fr);gap:5px}
+  .kbd span{border:1px solid var(--line);border-radius:4px;padding:7px 2px;
+    text-align:center;font:600 11.5px/1.2 system-ui,sans-serif;background:var(--ground);
+    color:var(--dim);transition:none}
+  .kbd span.hit{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+  </style>
+  <script>
+  const D = {"frames":[[-1,["LAZARUS AP-101S           ","                          ","                          ","                          ","                          ","                          "],[]],[19,["LAZARUS AP-101S           ","                          ","                          ","                          ","                          ","                          "],[19]],[2,["LAZARUS AP-101S           ","                          ","                          ","                          ","                          ","                          "],[19,2]],[0,["LAZARUS AP-101S           ","                          ","                          ","                          ","                          ","                          "],[19,2,0]],[1,["LAZARUS AP-101S           ","                          ","                          ","                          ","                          ","                          "],[19,2,0,1]],[23,["LAZARUS AP-101S           ","                          ","                          ","                          ","                          ","                          "],[19,2,0,1,23]],[21,["LAZARUS AP-101S           ","                          ","                          ","                          ","                          ","                          "],[19,2,0,1,23,21]],[3,["LAZARUS AP-101S           ","                          ","                          ","                          ","                          ","                          "],[19,2,0,1,23,21,3]],[6,["LAZARUS AP-101S           ","                          ","                          ","                          ","                          ","                          "],[19,2,0,1,23,21,3,6]],[16,["LAZARUS AP-101S           ","                          ","                          ","                          ","                          ","                          "],[19,2,0,1,23,21,3,6,16]],[1,["LAZARUS AP-101S           ","                          ","                          ","                          ","                          ","                          "],[19,2,0,1,23,21,3,6,16,1]],[2,["LAZARUS AP-101S           ","                          ","                          ","                          ","                          ","                          "],[19,2,0,1,23,21,3,6,16,1,2]],[22,["LAZARUS AP-101S           ","                          ","                          ","                          ","                          ","                          "],[19,2,0,1,23,21,3,6,16,1,2,22]]]};
+  const DF = D.frames, DN = DF.length;
+  const KEYS = [['0',0],['1',1],['2',2],['3',3],['4',4],['5',5],['6',6],['7',7],
+    ['8',8],['9',9],['A',10],['B',11],['C',12],['D',13],['E',14],['F',15],
+    ['+',16],['&minus;',17],['.',18],['OPS',19],['SPEC',20],['ITEM',21],['EXEC',22],
+    ['PRO',23],['RESUME',24],['CLEAR',25],['SYS SUMM',26],['FAULT',27],
+    ['GPC/CRT',28],['I/O RST',29],['ACK',30]];
+  let ki = 0, ktimer = null;
+  const kscrub = document.getElementById('kscrub'); kscrub.max = DN-1;
+  const NAME = {}; KEYS.forEach(([l,c])=>NAME[c]=l);
+  function krender(){
+    const [k, rows, heard] = DF[ki];
+    kscrub.value = ki;
+    document.getElementById('kstep').textContent = ki===0 ? 'ready' : 'key '+ki+' / '+(DN-1);
+    document.getElementById('kcrt').textContent = rows.join('\n');
+    document.getElementById('kbd').innerHTML = KEYS.map(([l,c])=>
+      '<span class="'+(c===k?'hit':'')+'">'+l+'</span>').join('');
+    document.getElementById('kheard').innerHTML = heard.length
+      ? heard.map(h=>'<b style="color:var(--accent)">'+(NAME[h]||h)+'</b>').join(' &middot; ')
+      : '<span style="color:var(--dim)">nothing yet</span>';
+  }
+  function kgo(n){ ki = Math.max(0, Math.min(DN-1, n)); krender(); }
+  function kstop(){ if(ktimer){clearInterval(ktimer); ktimer=null;
+    document.getElementById('kplay').textContent='Type the sequence';} }
+  document.getElementById('k0').onclick = ()=>{kstop();kgo(0)};
+  kscrub.oninput = ()=>{kstop();kgo(+kscrub.value)};
+  document.getElementById('kplay').onclick = function(){
+    if(ktimer){kstop();return}
+    if(ki>=DN-1) kgo(0);
+    this.textContent = 'Hold';
+    ktimer = setInterval(()=>{ if(ki>=DN-1){kstop();return} kgo(ki+1); }, 420);
+  };
+  kgo(0);
+  </script>
   <h2 class="sect">The people</h2>
   <div class="cards">
     <div class="card"><h3>The language builders</h3>

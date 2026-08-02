@@ -153,6 +153,33 @@ fn main() {
         }
     };
 
+    if std::env::args().any(|a| a == "--trace") {
+        // JSON frames for the crew-station UI: each keystroke's effect
+        // on the DEU screen and on what the GPC heard over the bus.
+        let script = [key::OPS, 2, 0, 1, key::PRO, key::ITEM, 3, 6,
+                      key::PLUS, 1, 2, key::EXEC];
+        let mut frames = String::new();
+        pump(&mut set, &mut heard);
+        let mut emit = |set: &RedundantSet, heard: &Vec<u16>, k: i32, first: bool| {
+            let deu = set.subsystems[0].as_any().downcast_ref::<Deu>().unwrap();
+            let rows: Vec<String> = deu
+                .screen_text()
+                .iter()
+                .map(|r| format!("{:?}", r))
+                .collect();
+            let hs: Vec<String> = heard.iter().map(|h| h.to_string()).collect();
+            format!("{}[{},[{}],[{}]]", if first { "" } else { "," },
+                    k, rows.join(","), hs.join(","))
+        };
+        frames.push_str(&emit(&set, &heard, -1, true));
+        for k in script {
+            set.subsystems[0].as_any_mut().downcast_mut::<Deu>().unwrap().press(k);
+            pump(&mut set, &mut heard);
+            frames.push_str(&emit(&set, &heard, k as i32, false));
+        }
+        println!("{{\"frames\":[{frames}]}}");
+        return;
+    }
     if demo {
         pump(&mut set, &mut heard); // header paint
         for k in [key::OPS, 2, 0, 1, key::PRO] {
