@@ -31,6 +31,11 @@ EXPECT = {  # modern equivalents
     "DTAN": math.tan, "DSINH": math.sinh, "DTANH": math.tanh,
     "DACOS": math.acos, "DATANH": math.atanh, "DMOD": math.fmod,
 }
+ARRAY_FN = {  # array routines: pointer in R2, count in R5
+    "EPROD": math.prod, "ESUM": sum, "EMAX": max, "EMIN": min,
+    "DPROD": math.prod, "DSUM": sum, "DMAX": max, "DMIN": min,
+    "HPROD": math.prod, "HSUM": sum, "IPROD": math.prod, "ISUM": sum,
+}
 
 
 def ibm_hex(v):
@@ -88,7 +93,7 @@ def census_obj(name):
     raise SystemExit(f"no deck defines {name}")
 
 
-def resurrect(name, arg, arg2=None):
+def resurrect(name, arg, arg2=None, array=None):
     chain, todo = [], [name]
     while todo:
         n = todo.pop()
@@ -103,16 +108,37 @@ def resurrect(name, arg, arg2=None):
     except OSError:
         srctext = ""
     intrinsic = "INTSIC=YES" in srctext
+    if array is not None:
+        # Array routines take a pointer in R2 and a count in R5, and
+        # their loops pre-increment - so R2 must point one fullword
+        # BEFORE the first element (verified against EPROD: the loop
+        # reads 2(R2) then bumps R2 by a fullword).
+        elems = "".join(f"         DC    X'{ibm_hex(v):08X}'\n" for v in array)
+        src = (f"         EXTRN {name}\nDRIVER   CSECT\n"
+               "         LA    0,STK\n         LA    2,ARRM1\n"
+               f"         LFXI  5,{len(array)}\n"
+               f"         BAL   4,{name}\n"
+               "         STE   0,RESULT\n         SVC   ENDC\n"
+               "ENDC     DC    H'21'\n"
+               "ARRM1    DC    F'0'\n" + elems +
+               "RESULT   DC    F'0'\nSTK      DS    40F\n"
+               "         END   DRIVER\n")
+        open(f"{ASM}/{name}_DRV.asm", "w").write(src)
+        lst = subprocess.run([PY, "ASM101S.py", f"--object={name}_DRV.obj",
+                              f"{name}_DRV.asm"], cwd=ASM,
+                             capture_output=True, text=True)
+        return _finish(name, chain, False, result_at(lst.stdout))
     dp = "SCALAR DP" in srctext.split("OUTPUT", 1)[-1][:60]
     # A second scalar argument travels in F2 (the routines' own INPUT
     # lines: "INPUT F0, ... / F2 ...").
     ld2 = "         LE    2,ARG2\n" if arg2 is not None else ""
     if dp:
         hi, lo = ibm_hex_long(arg)
-        argdc = f"ARG      DC    X'{hi:08X}',X'{lo:08X}'\n"
+        argdc = (f"ARG      DC    X'{hi:08X}'\n"
+                 f"         DC    X'{lo:08X}'\n")
         loadc = "         LED   0,ARG\n"
         stc = "         STED  0,RESULT\n"
-        resdc = "RESULT   DC    2F'0'\n"
+        resdc = "RESULT   DC    F'0'\n         DC    F'0'\n"
     else:
         argdc = f"ARG      DC    X'{ibm_hex(arg):08X}'\n"
         loadc = "         LE    0,ARG\n"
@@ -182,9 +208,12 @@ def main():
     for spec in sys.argv[1:]:
         name, _, a = spec.partition(":")
         args = [float(x) for x in a.split(",")]
-        arg = args[0]
-        arg2 = args[1] if len(args) > 1 else None
-        name, chain, got, err = resurrect(name, arg, arg2)
+        if name in ARRAY_FN:
+            arg, arg2, arr = args[0], None, args
+        else:
+            arg, arr = args[0], None
+            arg2 = args[1] if len(args) > 1 else None
+        name, chain, got, err = resurrect(name, arg, arg2, arr)
         if err:
             rows.append(f"| {name} | {'&rarr;'.join(chain[1:]) or '&mdash;'} "
                         f"| {arg:g}{'' if arg2 is None else f', {arg2:g}'} "
@@ -192,11 +221,16 @@ def main():
             bad += 1
             continue
         word, val = got
-        want = EXPECT[name](arg, arg2) if arg2 is not None else EXPECT[name](arg)
+        if arr is not None:
+            want = ARRAY_FN[name](arr)
+        elif arg2 is not None:
+            want = EXPECT[name](arg, arg2)
+        else:
+            want = EXPECT[name](arg)
         ok = abs(val - want) < 2e-6 * max(1, abs(want))
         bad += not ok
         rows.append(f"| {name} | {'&rarr;'.join(chain[1:]) or '&mdash;'} "
-                    f"| {arg:g}{'' if arg2 is None else f', {arg2:g}'} "
+                    f"| {'[' + ','.join(f'{x:g}' for x in arr) + ']' if arr else (f'{arg:g}' + ('' if arg2 is None else f', {arg2:g}'))} "
                     f"| 0x{word} = {val:.7f} | {want:.7f} "
                     f"| {'OK' if ok else 'MISMATCH'} |")
         print(rows[-1])

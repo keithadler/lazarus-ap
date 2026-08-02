@@ -13,10 +13,13 @@
 | ACOSH | SQRT&rarr;LOG | 2 | 0x41151242 = 1.3169575 | 1.3169579 | OK |
 | EATAN2 | &mdash; | 1, 2 | 0x4076B19C = 0.4636476 | 0.4636476 | OK |
 | EMOD | &mdash; | 7, 3 | 0x41100000 = 1.0000000 | 1.0000000 | OK |
-| EPWRE | EXP&rarr;SQRT&rarr;LOG | 2, 10 | 0x43400000 = 1024.0000000 | 1024.0000000 | OK |
-| DSQRT | &mdash; | 2 | &mdash; | &mdash; | FAILED: driver assembly failed |
+| EPWRE | SQRT&rarr;LOG&rarr;EXP | 2, 10 | 0x43400000 = 1024.0000000 | 1024.0000000 | OK |
+| DSQRT | &mdash; | 2 | 0x4116A09E = 1.4142136 | 1.4142136 | OK |
 | DEXP | &mdash; | 1 | 0x412B7E15 = 2.7182817 | 2.7182818 | OK |
-| DLOG | &mdash; | 2 | &mdash; | &mdash; | FAILED: driver assembly failed |
-| DTAN | &mdash; | 0.5 | &mdash; | &mdash; | FAILED: driver assembly failed |
+| DLOG | &mdash; | 2 | 0x40B17217 = 0.6931472 | 0.6931472 | OK |
 | DSINH | DEXP | 1 | 0x4112CD9F = 1.1752005 | 1.1752012 | OK |
 | DACOS | DSQRT | 0.5 | 0x4110C152 = 1.0471973 | 1.0471976 | OK |
+| EPROD | &mdash; | [2,3,4] | 0x42180000 = 24.0000000 | 24.0000000 | OK |
+| ESUM | &mdash; | [1.5,2.5,3] | 0x41700000 = 7.0000000 | 7.0000000 | OK |
+| EMAX | &mdash; | [3,9,4] | 0x41900000 = 9.0000000 | 9.0000000 | OK |
+| EMIN | &mdash; | [3,9,4] | 0x41300000 = 3.0000000 | 3.0000000 | OK |
