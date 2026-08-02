@@ -49,3 +49,18 @@ corrupted validity bits, which the receiving BCE rejects — proving the
 error checking works rather than asserting it does.
 
 Tests: `tests/sensors.rs`.
+
+## The closed loop
+
+`tests/sensors.rs::flight_math_on_simulated_sensor_data` runs the whole
+chain: a simulated sensor reports a direction over the serial bus, a
+BCE program polls it into main storage, and then genuine NASA flight
+routines - VV10S3 (UNIT VECTOR), which reaches through VV0SN into
+SQRT, followed by VV6S3 (dot product) - turn it into a pointing angle.
+
+    sensor reports (3, 3, 0)  ->  cos to the +X reference = 0.7071068
+                                  i.e. 45 degrees off axis
+
+The direction is invented. Every instruction that processed it is the
+Shuttle's own. This is the shape of real guidance work: read a vector
+from a sensor, normalise it, dot it with where you want to point.

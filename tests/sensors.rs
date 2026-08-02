@@ -109,3 +109,76 @@ fn mass_memory_loads_a_program_block() {
     assert_eq!(mm.loads, 1);
     assert_eq!(mm.blocks[mm.selected].0, "OPS 1 ASCENT");
 }
+
+/// The closed loop: a simulated sensor reports a direction over the
+/// bus, and genuine NASA flight routines turn it into a pointing
+/// angle. The vector is invented; VV10S3 (UNIT VECTOR), VV0SN, SQRT
+/// and VV6S3 (dot product) are the Shuttle's own code.
+#[test]
+fn flight_math_on_simulated_sensor_data() {
+    use lazarus_ap::halucp::{run_hal, HalRun, HalUcp};
+    use lazarus_ap::{fcm, Cpu, Memory};
+
+    // The sensor reports a direction 45 degrees off the reference axis:
+    // (3, 3, 0) as IBM hexfloat halfwords.
+    let f = |v: f64| -> [u16; 2] {
+        if v == 0.0 { return [0, 0]; }
+        let (mut av, mut ch) = (v.abs(), 64i32);
+        while av >= 1.0 { av /= 16.0; ch += 1; }
+        while av < 1.0 / 16.0 { av *= 16.0; ch -= 1; }
+        let w = (((v < 0.0) as u32) << 31) | ((ch as u32 & 0x7F) << 24)
+            | ((av * (1u32 << 24) as f64) as u32 & 0xFF_FFFF);
+        [(w >> 16) as u16, w as u16]
+    };
+    let mut words = Vec::new();
+    for v in [3.0, 3.0, 0.0] {
+        words.extend_from_slice(&f(v));
+    }
+
+    // Boot the pipeline image, then let a BCE poll the sensor straight
+    // into the driver's own input vector (SENSM1 + one fullword).
+    let bytes = std::fs::read("roms/nasa/ATTRUN.fcm").unwrap();
+    let mut cpu = Cpu::new(Memory::full());
+    fcm::boot(&mut cpu, &bytes, Some(r#"{"entryPoint": 256}"#)).unwrap();
+    const SENSOR_VEC: u32 = 0x118; // SENSM1 is 0x116; the vector follows
+    let poll: u32 = (0x0E << 19) | (1 << 16) | 6;
+    cpu.mem
+        .load_halfwords(
+            0x1000,
+            &[
+                0xF200, SENSOR_VEC as u16, 0xB000 | 300, 0xC000,
+                0b11110001_00000000, 5, (poll >> 16) as u16, poll as u16,
+                0xE800, 0x0800,
+            ],
+        )
+        .unwrap();
+    let mut gpc = Gpc { cpu, iop: Default::default() };
+    {
+        let mut iop = gpc.iop.borrow_mut();
+        iop.halted = false;
+        iop.bces[7].busy = true;
+        iop.bces[7].pc = 0x1000;
+        iop.mia_xmtr_enable = 1 << (31 - 7u32);
+        iop.mia_rcvr_enable = 1 << (31 - 7u32);
+    }
+    gpc.cpu.psw.wait = true; // hold the CPU while the sensor is read
+    let mut set = RedundantSet::new(vec![gpc]);
+    set.subsystems
+        .push(Box::new(DataSource::new(7, 0x0E, words)));
+    set.run(400);
+
+    // The reading landed; now run the flight mathematics on it.
+    let mut cpu = std::mem::replace(&mut set.gpcs[0].cpu, Cpu::new(Memory::new(4)));
+    assert_ne!(cpu.mem.read_h(SENSOR_VEC).unwrap(), 0, "sensor data arrived");
+    cpu.psw.wait = false;
+    cpu.psw.ic = 0x100;
+    let mut ucp = HalUcp::new(u32::MAX >> 1, 0, 0, 0);
+    assert_eq!(run_hal(&mut cpu, &mut ucp, 400_000), HalRun::Done);
+
+    // cos(45 degrees) = 0.7071 between (3,3,0) and the +X reference.
+    let w = cpu.mem.read_f(0x130).unwrap();
+    let u = lazarus_ap::float::unpack_short(w);
+    let cos = u.frac as f64 * (16f64).powi(u.ch - 78) * if u.neg { -1.0 } else { 1.0 };
+    println!("pointing cosine = {cos} ({:08X})", w);
+    assert!((cos - 0.70710678).abs() < 1e-5, "45 degrees off axis: {cos}");
+}
