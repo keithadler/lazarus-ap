@@ -1,0 +1,498 @@
+{
+ "_note": "Every runnable NASA flight-runtime image, with the driver's result address and the modern value it is checked against. Addresses come from the drivers' assembler listings, recorded here because the listings themselves did not survive (see docs/ROADMAP.md). tools/labcheck.py runs every entry and regenerates lab.md.",
+ "entries": [
+  {
+   "r": "SQRT",
+   "in": "2",
+   "at": [
+    "10E"
+   ],
+   "want": [
+    1.4142135624
+   ],
+   "desc": "square root"
+  },
+  {
+   "r": "EXP",
+   "in": "1",
+   "at": [
+    "10E"
+   ],
+   "want": [
+    2.7182818285
+   ],
+   "desc": "e^x"
+  },
+  {
+   "r": "LOG",
+   "in": "2",
+   "at": [
+    "10E"
+   ],
+   "want": [
+    0.6931471806
+   ],
+   "desc": "natural log"
+  },
+  {
+   "r": "TAN",
+   "in": "0.5",
+   "at": [
+    "10E"
+   ],
+   "want": [
+    0.5463024898
+   ],
+   "desc": "tangent"
+  },
+  {
+   "r": "ATAN",
+   "in": "1",
+   "at": [
+    "10E"
+   ],
+   "want": [
+    0.7853981634
+   ],
+   "desc": "arctangent"
+  },
+  {
+   "r": "SINH",
+   "in": "1",
+   "at": [
+    "10E"
+   ],
+   "want": [
+    1.1752011936
+   ],
+   "desc": "hyperbolic sine"
+  },
+  {
+   "r": "COSH",
+   "in": "1",
+   "at": [
+    "10E"
+   ],
+   "want": [
+    1.5430806348
+   ],
+   "desc": "hyperbolic cosine"
+  },
+  {
+   "r": "TANH",
+   "in": "1",
+   "at": [
+    "10E"
+   ],
+   "want": [
+    0.761594156
+   ],
+   "desc": "hyperbolic tangent"
+  },
+  {
+   "r": "ACOS",
+   "in": "0.5",
+   "at": [
+    "10E"
+   ],
+   "want": [
+    1.0471975512
+   ],
+   "desc": "arccosine"
+  },
+  {
+   "r": "ACOSH",
+   "in": "2",
+   "at": [
+    "10E"
+   ],
+   "want": [
+    1.3169578969
+   ],
+   "desc": "inverse hyperbolic cosine"
+  },
+  {
+   "r": "ASINH",
+   "in": "1",
+   "at": [
+    "10E"
+   ],
+   "want": [
+    0.881373587
+   ],
+   "desc": "inverse hyperbolic sine"
+  },
+  {
+   "r": "ATANH",
+   "in": "0.5",
+   "at": [
+    "10E"
+   ],
+   "want": [
+    0.5493061443
+   ],
+   "desc": "inverse hyperbolic tangent"
+  },
+  {
+   "r": "EATAN2",
+   "in": "1, 2",
+   "at": [
+    "112"
+   ],
+   "want": [
+    0.463647609
+   ],
+   "desc": "two-argument arctangent"
+  },
+  {
+   "r": "EMOD",
+   "in": "7, 3",
+   "at": [
+    "112"
+   ],
+   "want": [
+    1.0
+   ],
+   "desc": "floating remainder"
+  },
+  {
+   "r": "EPWRE",
+   "in": "2, 10",
+   "at": [
+    "112"
+   ],
+   "want": [
+    1024.0
+   ],
+   "desc": "x raised to a power"
+  },
+  {
+   "r": "EPROD",
+   "in": "[2,3,4]",
+   "at": [
+    "114"
+   ],
+   "want": [
+    24.0
+   ],
+   "desc": "product of an array"
+  },
+  {
+   "r": "ESUM",
+   "in": "[1.5,2.5,3]",
+   "at": [
+    "114"
+   ],
+   "want": [
+    7.0
+   ],
+   "desc": "sum of an array"
+  },
+  {
+   "r": "EMAX",
+   "in": "[3,9,4]",
+   "at": [
+    "114"
+   ],
+   "want": [
+    9.0
+   ],
+   "desc": "largest of an array"
+  },
+  {
+   "r": "EMIN",
+   "in": "[3,9,4]",
+   "at": [
+    "114"
+   ],
+   "want": [
+    3.0
+   ],
+   "desc": "smallest of an array"
+  },
+  {
+   "r": "DSQRT",
+   "in": "2",
+   "at": [
+    "110"
+   ],
+   "want": [
+    1.4142135624
+   ],
+   "dp": true,
+   "desc": "square root, double precision"
+  },
+  {
+   "r": "DEXP",
+   "in": "1",
+   "at": [
+    "10E"
+   ],
+   "want": [
+    2.7182818285
+   ],
+   "dp": true,
+   "desc": "e^x, double precision"
+  },
+  {
+   "r": "DLOG",
+   "in": "2",
+   "at": [
+    "110"
+   ],
+   "want": [
+    0.6931471806
+   ],
+   "dp": true,
+   "desc": "natural log, double precision"
+  },
+  {
+   "r": "DSINH",
+   "in": "1",
+   "at": [
+    "10E"
+   ],
+   "want": [
+    1.1752011936
+   ],
+   "dp": true,
+   "desc": "hyperbolic sine, double precision"
+  },
+  {
+   "r": "DTANH",
+   "in": "1",
+   "at": [
+    "10E"
+   ],
+   "want": [
+    0.761594156
+   ],
+   "dp": true,
+   "desc": "hyperbolic tangent, double precision"
+  },
+  {
+   "r": "DACOS",
+   "in": "0.5",
+   "at": [
+    "10E"
+   ],
+   "want": [
+    1.0471975512
+   ],
+   "dp": true,
+   "desc": "arccosine, double precision"
+  },
+  {
+   "r": "DATANH",
+   "in": "0.5",
+   "at": [
+    "110"
+   ],
+   "want": [
+    0.5493061443
+   ],
+   "dp": true,
+   "desc": "inverse hyperbolic tangent, double precision"
+  },
+  {
+   "r": "DMOD",
+   "in": "7, 3",
+   "at": [
+    "112"
+   ],
+   "want": [
+    1.0
+   ],
+   "dp": true,
+   "desc": "floating remainder, double precision"
+  },
+  {
+   "r": "SNCS",
+   "in": "0.5",
+   "at": [
+    "110",
+    "112"
+   ],
+   "want": [
+    0.4794255386,
+    0.8775825619
+   ],
+   "desc": "sine and cosine together \u2014 the orbiter's trigonometry"
+  },
+  {
+   "r": "VV6",
+   "in": "[1,2,3]\u00b7[4,5,6]",
+   "at": [
+    "11E"
+   ],
+   "want": [
+    32.0
+   ],
+   "desc": "dot product \u2014 the angle between two directions"
+  },
+  {
+   "r": "VV10",
+   "in": "[3,4,0]",
+   "at": [
+    "116",
+    "118",
+    "11A"
+   ],
+   "want": [
+    0.6,
+    0.8,
+    0.0
+   ],
+   "desc": "unit vector \u2014 normalizing a heading"
+  },
+  {
+   "r": "VX6",
+   "in": "x\u0302 \u00d7 \u0177",
+   "at": [
+    "120",
+    "122",
+    "124"
+   ],
+   "want": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "desc": "cross product \u2014 the perpendicular, right-hand rule"
+  },
+  {
+   "r": "MM12",
+   "in": "diag(2,3,4)",
+   "at": [
+    "120"
+   ],
+   "want": [
+    24.0
+   ],
+   "desc": "3\u00d73 determinant"
+  },
+  {
+   "r": "MM14",
+   "in": "diag(2,4,5)",
+   "at": [
+    "122",
+    "124",
+    "126",
+    "128",
+    "12A",
+    "12C",
+    "12E",
+    "130",
+    "132"
+   ],
+   "want": [
+    0.5,
+    0,
+    0,
+    0,
+    0.25,
+    0,
+    0,
+    0,
+    0.2
+   ],
+   "desc": "3\u00d73 matrix inverse \u2014 undoing a rotation"
+  },
+  {
+   "r": "MM6",
+   "in": "[[1..9]] \u00d7 2I",
+   "at": [
+    "138",
+    "13A",
+    "13C",
+    "13E",
+    "140",
+    "142",
+    "144",
+    "146",
+    "148"
+   ],
+   "want": [
+    2,
+    4,
+    6,
+    8,
+    10,
+    12,
+    14,
+    16,
+    18
+   ],
+   "desc": "3\u00d73 matrix multiply \u2014 composing rotations"
+  },
+  {
+   "r": "VV3",
+   "in": "[5,7,9]-[1,2,3]",
+   "at": [
+    "120",
+    "122",
+    "124"
+   ],
+   "want": [
+    4.0,
+    5.0,
+    6.0
+   ],
+   "desc": "vector subtract"
+  },
+  {
+   "r": "IPROD",
+   "in": "[2,3,4]",
+   "at": [
+    "114"
+   ],
+   "want": [
+    24
+   ],
+   "int": true,
+   "desc": "product of an integer array"
+  },
+  {
+   "r": "ISUM",
+   "in": "[2,3,4]",
+   "at": [
+    "114"
+   ],
+   "want": [
+    9
+   ],
+   "int": true,
+   "desc": "sum of an integer array"
+  },
+  {
+   "r": "DPROD",
+   "in": "[2,3,4]",
+   "at": [
+    "11C"
+   ],
+   "want": [
+    24.0
+   ],
+   "dp": true,
+   "desc": "product of an array, double precision"
+  },
+  {
+   "r": "DSUM",
+   "in": "[1.5,2.5,3]",
+   "at": [
+    "11C"
+   ],
+   "want": [
+    7.0
+   ],
+   "dp": true,
+   "desc": "sum of an array, double precision"
+  }
+ ],
+ "unverified": {
+  "_why": "ATT is the attitude pipeline: it only produces its answer when sensor data is polled in over the IOP, so it cannot be checked by a plain lazap-call. It is verified instead by the integration test flight_math_on_simulated_sensor_data in tests/sensors.rs, which asserts cos(45 degrees) at 0x130.",
+  "images": [
+   "ATT"
+  ]
+ }
+}

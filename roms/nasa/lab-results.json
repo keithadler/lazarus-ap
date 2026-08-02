@@ -1,0 +1,516 @@
+[
+ {
+  "r": "SQRT",
+  "desc": "square root",
+  "in": "2",
+  "got": [
+   1.4142131805419922
+  ],
+  "want": [
+   1.4142135624
+  ],
+  "ok": true
+ },
+ {
+  "r": "EXP",
+  "desc": "e^x",
+  "in": "1",
+  "got": [
+   2.7182817459106445
+  ],
+  "want": [
+   2.7182818285
+  ],
+  "ok": true
+ },
+ {
+  "r": "LOG",
+  "desc": "natural log",
+  "in": "2",
+  "got": [
+   0.6931472420692444
+  ],
+  "want": [
+   0.6931471806
+  ],
+  "ok": true
+ },
+ {
+  "r": "TAN",
+  "desc": "tangent",
+  "in": "0.5",
+  "got": [
+   0.5463024377822876
+  ],
+  "want": [
+   0.5463024898
+  ],
+  "ok": true
+ },
+ {
+  "r": "ATAN",
+  "desc": "arctangent",
+  "in": "1",
+  "got": [
+   0.7853981256484985
+  ],
+  "want": [
+   0.7853981634
+  ],
+  "ok": true
+ },
+ {
+  "r": "SINH",
+  "desc": "hyperbolic sine",
+  "in": "1",
+  "got": [
+   1.175201416015625
+  ],
+  "want": [
+   1.1752011936
+  ],
+  "ok": true
+ },
+ {
+  "r": "COSH",
+  "desc": "hyperbolic cosine",
+  "in": "1",
+  "got": [
+   1.5430803298950195
+  ],
+  "want": [
+   1.5430806348
+  ],
+  "ok": true
+ },
+ {
+  "r": "TANH",
+  "desc": "hyperbolic tangent",
+  "in": "1",
+  "got": [
+   0.7615941762924194
+  ],
+  "want": [
+   0.761594156
+  ],
+  "ok": true
+ },
+ {
+  "r": "ACOS",
+  "desc": "arccosine",
+  "in": "0.5",
+  "got": [
+   1.0471973419189453
+  ],
+  "want": [
+   1.0471975512
+  ],
+  "ok": true
+ },
+ {
+  "r": "ACOSH",
+  "desc": "inverse hyperbolic cosine",
+  "in": "2",
+  "got": [
+   1.3169574737548828
+  ],
+  "want": [
+   1.3169578969
+  ],
+  "ok": true
+ },
+ {
+  "r": "ASINH",
+  "desc": "inverse hyperbolic sine",
+  "in": "1",
+  "got": [
+   0.8813734650611877
+  ],
+  "want": [
+   0.881373587
+  ],
+  "ok": true
+ },
+ {
+  "r": "ATANH",
+  "desc": "inverse hyperbolic tangent",
+  "in": "0.5",
+  "got": [
+   0.5493059158325195
+  ],
+  "want": [
+   0.5493061443
+  ],
+  "ok": true
+ },
+ {
+  "r": "EATAN2",
+  "desc": "two-argument arctangent",
+  "in": "1, 2",
+  "got": [
+   0.46364760398864746
+  ],
+  "want": [
+   0.463647609
+  ],
+  "ok": true
+ },
+ {
+  "r": "EMOD",
+  "desc": "floating remainder",
+  "in": "7, 3",
+  "got": [
+   1.0
+  ],
+  "want": [
+   1.0
+  ],
+  "ok": true
+ },
+ {
+  "r": "EPWRE",
+  "desc": "x raised to a power",
+  "in": "2, 10",
+  "got": [
+   1024.0
+  ],
+  "want": [
+   1024.0
+  ],
+  "ok": true
+ },
+ {
+  "r": "EPROD",
+  "desc": "product of an array",
+  "in": "[2,3,4]",
+  "got": [
+   24.0
+  ],
+  "want": [
+   24.0
+  ],
+  "ok": true
+ },
+ {
+  "r": "ESUM",
+  "desc": "sum of an array",
+  "in": "[1.5,2.5,3]",
+  "got": [
+   7.0
+  ],
+  "want": [
+   7.0
+  ],
+  "ok": true
+ },
+ {
+  "r": "EMAX",
+  "desc": "largest of an array",
+  "in": "[3,9,4]",
+  "got": [
+   9.0
+  ],
+  "want": [
+   9.0
+  ],
+  "ok": true
+ },
+ {
+  "r": "EMIN",
+  "desc": "smallest of an array",
+  "in": "[3,9,4]",
+  "got": [
+   3.0
+  ],
+  "want": [
+   3.0
+  ],
+  "ok": true
+ },
+ {
+  "r": "DSQRT",
+  "desc": "square root, double precision",
+  "in": "2",
+  "got": [
+   1.4142135614529252
+  ],
+  "want": [
+   1.4142135624
+  ],
+  "ok": true
+ },
+ {
+  "r": "DEXP",
+  "desc": "e^x, double precision",
+  "in": "1",
+  "got": [
+   2.7182817497268843
+  ],
+  "want": [
+   2.7182818285
+  ],
+  "ok": true
+ },
+ {
+  "r": "DLOG",
+  "desc": "natural log, double precision",
+  "in": "2",
+  "got": [
+   0.6931471805599453
+  ],
+  "want": [
+   0.6931471806
+  ],
+  "ok": true
+ },
+ {
+  "r": "DSINH",
+  "desc": "hyperbolic sine, double precision",
+  "in": "1",
+  "got": [
+   1.1752004661575484
+  ],
+  "want": [
+   1.1752011936
+  ],
+  "ok": true
+ },
+ {
+  "r": "DTANH",
+  "desc": "hyperbolic tangent, double precision",
+  "in": "1",
+  "got": [
+   0.7615941169262896
+  ],
+  "want": [
+   0.761594156
+  ],
+  "ok": true
+ },
+ {
+  "r": "DACOS",
+  "desc": "arccosine, double precision",
+  "in": "0.5",
+  "got": [
+   1.047197345735185
+  ],
+  "want": [
+   1.0471975512
+  ],
+  "ok": true
+ },
+ {
+  "r": "DATANH",
+  "desc": "inverse hyperbolic tangent, double precision",
+  "in": "0.5",
+  "got": [
+   0.5493061443340748
+  ],
+  "want": [
+   0.5493061443
+  ],
+  "ok": true
+ },
+ {
+  "r": "DMOD",
+  "desc": "floating remainder, double precision",
+  "in": "7, 3",
+  "got": [
+   1.0
+  ],
+  "want": [
+   1.0
+  ],
+  "ok": true
+ },
+ {
+  "r": "SNCS",
+  "desc": "sine and cosine together \u2014 the orbiter's trigonometry",
+  "in": "0.5",
+  "got": [
+   0.47942548990249634,
+   0.8775825500488281
+  ],
+  "want": [
+   0.4794255386,
+   0.8775825619
+  ],
+  "ok": true
+ },
+ {
+  "r": "VV6",
+  "desc": "dot product \u2014 the angle between two directions",
+  "in": "[1,2,3]\u00b7[4,5,6]",
+  "got": [
+   32.0
+  ],
+  "want": [
+   32.0
+  ],
+  "ok": true
+ },
+ {
+  "r": "VV10",
+  "desc": "unit vector \u2014 normalizing a heading",
+  "in": "[3,4,0]",
+  "got": [
+   0.5999999642372131,
+   0.7999999523162842,
+   0.0
+  ],
+  "want": [
+   0.6,
+   0.8,
+   0.0
+  ],
+  "ok": true
+ },
+ {
+  "r": "VX6",
+  "desc": "cross product \u2014 the perpendicular, right-hand rule",
+  "in": "x\u0302 \u00d7 \u0177",
+  "got": [
+   0.0,
+   0.0,
+   1.0
+  ],
+  "want": [
+   0.0,
+   0.0,
+   1.0
+  ],
+  "ok": true
+ },
+ {
+  "r": "MM12",
+  "desc": "3\u00d73 determinant",
+  "in": "diag(2,3,4)",
+  "got": [
+   24.0
+  ],
+  "want": [
+   24.0
+  ],
+  "ok": true
+ },
+ {
+  "r": "MM14",
+  "desc": "3\u00d73 matrix inverse \u2014 undoing a rotation",
+  "in": "diag(2,4,5)",
+  "got": [
+   0.5,
+   0.0,
+   0.0,
+   0.0,
+   0.25,
+   0.0,
+   0.0,
+   0.0,
+   0.19999998807907104
+  ],
+  "want": [
+   0.5,
+   0,
+   0,
+   0,
+   0.25,
+   0,
+   0,
+   0,
+   0.2
+  ],
+  "ok": true
+ },
+ {
+  "r": "MM6",
+  "desc": "3\u00d73 matrix multiply \u2014 composing rotations",
+  "in": "[[1..9]] \u00d7 2I",
+  "got": [
+   2.0,
+   4.0,
+   6.0,
+   8.0,
+   10.0,
+   12.0,
+   14.0,
+   16.0,
+   18.0
+  ],
+  "want": [
+   2,
+   4,
+   6,
+   8,
+   10,
+   12,
+   14,
+   16,
+   18
+  ],
+  "ok": true
+ },
+ {
+  "r": "VV3",
+  "desc": "vector subtract",
+  "in": "[5,7,9]-[1,2,3]",
+  "got": [
+   4.0,
+   5.0,
+   6.0
+  ],
+  "want": [
+   4.0,
+   5.0,
+   6.0
+  ],
+  "ok": true
+ },
+ {
+  "r": "IPROD",
+  "desc": "product of an integer array",
+  "in": "[2,3,4]",
+  "got": [
+   24.0
+  ],
+  "want": [
+   24
+  ],
+  "ok": true
+ },
+ {
+  "r": "ISUM",
+  "desc": "sum of an integer array",
+  "in": "[2,3,4]",
+  "got": [
+   9.0
+  ],
+  "want": [
+   9
+  ],
+  "ok": true
+ },
+ {
+  "r": "DPROD",
+  "desc": "product of an array, double precision",
+  "in": "[2,3,4]",
+  "got": [
+   24.0
+  ],
+  "want": [
+   24.0
+  ],
+  "ok": true
+ },
+ {
+  "r": "DSUM",
+  "desc": "sum of an array, double precision",
+  "in": "[1.5,2.5,3]",
+  "got": [
+   7.0
+  ],
+  "want": [
+   7.0
+  ],
+  "ok": true
+ }
+]
