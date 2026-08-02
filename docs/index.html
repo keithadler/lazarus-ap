@@ -489,98 +489,111 @@ h2.sect{font-size:22px;font-weight:400;margin:0 0 14px}
   kgo(0);
   </script>
   <h2 class="sect" id="bugs">Defect report &mdash; filed against a retired spacecraft</h2>
-  <p style="max-width:72ch;margin:0 0 16px">Bringing this software back means running
-  it against a modern reading of its own documentation, and that turns up
-  discrepancies. Below is what forty-five-year-old flight code looks like under a
-  fresh set of eyes, written the way you would file it today. Two of these are the
-  original engineers&rsquo; own admissions &mdash; printed in the manuals, in capital
-  letters. One is a live defect in a recovered tool. And one, in fairness, was mine.</p>
+  <p style="max-width:72ch;margin:0 0 16px">These are defects in the flight system
+  itself. Three of the four are the original engineers&rsquo; own admissions, printed
+  in the Principles of Operation under headings that read
+  <span class="mono">ANOMALY NOTE</span> &mdash; documented, shipped, and flown for
+  thirty years. Written the way you would file them today.</p>
 
   <div class="bug">
     <p class="bughdr"><b>AP-101S-1</b> &middot; Floating-point COMPARE reports false
-    equality <span class="sev">SEVERITY: HIGH (as flown)</span></p>
-    <p><b>Component</b> Central processing unit, floating-point compare (CE/CER/CED/CEDR).<br>
-    <b>Status</b> Documented by IBM. Not a discovery &mdash; an admission, printed in
-    the Principles of Operation under the heading ANOMALY NOTE.<br>
+    equality <span class="sev">SEVERITY: HIGH</span></p>
+    <p><b>Component</b> CPU floating-point compare (CE/CER/CED/CEDR).<br>
     <b>Description</b> Two unequal numbers compare <i>equal</i> when their fractions
-    differ by exactly X&rsquo;80 0000&rsquo; after prealignment. The manual gives three
+    differ by exactly X&rsquo;80&nbsp;0000&rsquo; after prealignment. IBM prints three
     worked examples of its own hardware getting the wrong answer, e.g. operands
-    <span class="mono">423F FFFF 0000 1234</span> and
+    <span class="mono">423F FFFF 0000 1234</span> vs
     <span class="mono">423F FFFF 0080 1234</span> return &ldquo;equal&rdquo; where the
     correct result is &ldquo;less than&rdquo;.<br>
-    <b>Impact</b> Any flight code branching on the equality of two nearly-identical
-    scalars can take the wrong branch. Guidance software compares magnitudes constantly.<br>
-    <b>Reproduce</b> Load the manual&rsquo;s own operand pairs and execute a CED. (Our
-    emulator deliberately computes the <i>correct</i> answer &mdash; the anomaly is
-    catalogued, not replicated, and that choice is recorded in ISA_STATUS.md.)<br>
-    <b>Workaround</b> Compare against a tolerance rather than for equality &mdash;
-    which is what careful numerical code does anyway.</p>
+    <b>Impact</b> Flight code branching on the equality of two nearly-identical
+    scalars takes the wrong branch. Guidance software compares magnitudes constantly.<br>
+    <b>Reproduce</b> Execute a CED on the manual&rsquo;s own operand pairs.<br>
+    <b>Workaround</b> Compare against a tolerance, never for equality.</p>
   </div>
 
   <div class="bug">
-    <p class="bughdr"><b>AP-101S-2</b> &middot; Long DIVIDE silently loses half its
-    precision <span class="sev">SEVERITY: MEDIUM</span></p>
-    <p><b>Component</b> CPU, double-precision divide (DED/DEDR).<br>
-    <b>Status</b> Documented by IBM, cause not characterized.<br>
-    <b>Description</b> Verbatim: under certain conditions the quotient is accurate to
-    only <b>29 of its 56 fraction bits</b> &mdash; and the manual states plainly that
-    it is &ldquo;not feasible to characterize these conditions&rdquo;, advising that
-    long divide simply not be used where more than 29 bits matter.<br>
-    <b>Impact</b> Silent precision loss in double-precision division, with no
-    indication to the program. A navigation filter dividing large covariances could
-    lose accuracy invisibly.<br>
-    <b>Reproduce</b> Not reproducible on demand &mdash; that is the defect.<br>
-    <b>Workaround</b> The manual&rsquo;s own: avoid long divide when precision matters.</p>
+    <p class="bughdr"><b>AP-101S-2</b> &middot; A masked DMA interrupt silently
+    destroys arithmetic error detection <span class="sev">SEVERITY: HIGH</span></p>
+    <p><b>Component</b> CPU interrupt system, DMA store-protect handling.<br>
+    <b>Description</b> IBM&rsquo;s own words: a masked DMA store-protect interrupt
+    &ldquo;will set the condition code to a binary 10 and clear the carry and overflow
+    bits&hellip; This can result in erroneous GPC operation if an instruction tries to
+    utilize the CC, carry bit or overflow bit before they are set by another
+    instruction.&rdquo; Worse, it &ldquo;clears any fixed point overflow, floating point
+    underflow, and floating point overflow interrupts&hellip; This can result in a lost
+    arithmetic interrupt.&rdquo;<br>
+    <b>Impact</b> The most serious item here. An overflow that <i>did</i> happen can be
+    erased before the program is told about it &mdash; an arithmetic error detection
+    system that silently fails, triggered by unrelated I/O activity. Condition codes
+    are also corrupted mid-computation, so a comparison made before the event and used
+    after it decides on garbage.<br>
+    <b>Reproduce</b> Timing-dependent: requires a DMA store-protect violation to land
+    inside an instruction that raises an arithmetic interrupt.<br>
+    <b>Workaround</b> None documented. The manual states the behaviour and moves on.</p>
   </div>
 
   <div class="bug">
-    <p class="bughdr"><b>ASM101S-1</b> &middot; Three flight routines no longer
-    assemble <span class="sev">SEVERITY: MEDIUM (tooling)</span></p>
-    <p><b>Component</b> ASM101S assembler (the recovered modern port), macro library.<br>
-    <b>Found</b> Census of the flight runtime, August 2026: <b>202 of 205</b> routines
-    assemble cleanly; three do not.<br>
-    <b>Failing</b> <span class="mono">CSTRUC</span> (2 errors),
-    <span class="mono">VV8D3</span>, <span class="mono">VV8S3</span> (1 each).<br>
-    <b>Diagnostic</b> <span class="mono">(Pass -1, Severity 4) INVALID CC OPERAND FOR
-    INTRINSIC</span> &mdash; raised by the AEXIT macro when an intrinsic returns a
-    condition code. VV8S3&rsquo;s own header declares <span class="mono">OUTPUT CC</span>,
-    so the source and the macro library disagree about whether that is legal.<br>
-    <b>Impact</b> Those three routines cannot be rebuilt from source today. They ran
-    for thirty years; the loss is in the tooling, not the flight code.<br>
-    <b>Reproduce</b> <span class="mono">ASM101S.py --library VV8S3.asm</span><br>
-    <b>Suspected cause</b> A macro-library version skew between the recovered RUNMAC
-    macros and the routines that use them &mdash; not yet confirmed.</p>
+    <p class="bughdr"><b>AP-101S-3</b> &middot; Block move corrupts data at a specific
+    address overlap <span class="sev">SEVERITY: MEDIUM</span></p>
+    <p><b>Component</b> CPU, MOVE HALFWORD (MVH).<br>
+    <b>Description</b> MVH &ldquo;will not correctly move data when the expanded source
+    address is exactly one greater than the expanded destination address and the most
+    significant bit of R1 and R2 are not equal.&rdquo; The manual&rsquo;s advice is to
+    arrange your data so the situation cannot arise &mdash; and it recommends moving
+    fullwords instead, which is both faster and avoids the trap.<br>
+    <b>Impact</b> Silent data corruption on a legal instruction with legal operands.
+    The programmer is expected to remember the exclusion zone.<br>
+    <b>Reproduce</b> Move a block with source = destination + 1 across differing
+    sector-bit settings.<br>
+    <b>Workaround</b> The manual&rsquo;s: move fullwords, offset by two halfwords.</p>
+  </div>
+
+  <div class="bug">
+    <p class="bughdr"><b>HALS-FC-1</b> &middot; ON ERROR handlers never fire for a
+    singular matrix <span class="sev">SEVERITY: MEDIUM</span></p>
+    <p><b>Component</b> HAL/S-FC compiler and the flight runtime&rsquo;s matrix
+    inverse (MM14S3).<br>
+    <b>Description</b> A program can register <span class="mono">ON ERROR</span> for
+    the singular-matrix condition (error group 4, number 27), and the compiler accepts
+    it &mdash; but that handler can never run. Dispatch to user handlers happens
+    because the compiler emits its own re-check of the error condition after the call;
+    for matrix inversion it emits none, because singularity cannot be cheaply
+    re-tested. The routine falls through to an identity-matrix fallback instead.<br>
+    <b>Impact</b> Error handling that compiles, reads correctly in the source, and is
+    silently dead. The program continues with an identity matrix where it believes it
+    has an inverse.<br>
+    <b>Reproduce</b> Invert a singular 3&times;3 with a handler registered; observe the
+    fallback rather than the handler.<br>
+    <b>Status</b> Confirmed against the flight software&rsquo;s own error handler
+    (&ldquo;DELETE ON ERROR SUPPORT&rdquo;, 1978) by the Virtual AGC project. This
+    emulator implements the exclusion, so the dead handler stays dead here too.</p>
   </div>
 
   <div class="bug" style="border-left-color:var(--dim)">
-    <p class="bughdr"><b>LAZARUS-1</b> &middot; Emulator dropped the first halfword of
-    every block move <span class="sev" style="background:var(--dim)">SEVERITY: HIGH &middot; FIXED</span></p>
-    <p><b>Component</b> Our AP-101S emulator, MVH instruction.<br>
-    <b>Found by</b> A Shuttle physics program, which printed a garbage acceleration
-    while its two neighbouring components were bit-exact.<br>
-    <b>Cause</b> Figure 9-1 of the Principles of Operation does not state whether the
-    move count decrements before or after each transfer. We guessed after; the
-    hardware decrements first. Every block copy silently lost element zero &mdash;
-    which, in the HAL/S runtime&rsquo;s constant table, was the high half of the
-    number 0.1.<br>
-    <b>Impact</b> Any program using a copied constant got a wrong value with no error
-    indication. Exactly the class of defect that voting computers exist to catch.<br>
-    <b>Reproduce</b> Historical: <span class="mono">git show f24b937</span>.<br>
-    <b>Resolution</b> Fixed, with a regression test; the diagnosis is written up in
-    the repository. Filed here because a resurrection that only lists other
-    people&rsquo;s bugs is not being honest.</p>
+    <p class="bughdr"><b>ASM101S-1</b> &middot; Three flight routines no longer
+    assemble <span class="sev" style="background:var(--dim)">SEVERITY: MEDIUM &middot; TOOLING</span></p>
+    <p><b>Component</b> The recovered ASM101S assembler and its macro library &mdash;
+    modern reconstructions, not flight articles.<br>
+    <b>Found</b> Census of the runtime library: <b>202 of 205</b> routines assemble;
+    <span class="mono">CSTRUC</span>, <span class="mono">VV8D3</span> and
+    <span class="mono">VV8S3</span> do not.<br>
+    <b>Diagnostic</b> <span class="mono">(Pass -1, Severity 4) INVALID CC OPERAND FOR
+    INTRINSIC</span>, raised by the AEXIT macro when an intrinsic returns a condition
+    code &mdash; yet VV8S3&rsquo;s own header declares <span class="mono">OUTPUT CC</span>.
+    Source and macro library disagree.<br>
+    <b>Impact</b> Those three cannot be rebuilt from source today. The loss is in the
+    recovered tooling, not the flight code.<br>
+    <b>Suspected cause</b> Macro-library version skew; unconfirmed.</p>
   </div>
-  <p class="hint" style="margin:0 0 40px">Should anyone fly an AP-101S again, items 1
-  and 2 are still open, and were open the whole time it flew.</p>
-  <style>
-  .bug{background:var(--panel);border:1px solid var(--line);border-left:4px solid var(--amber);
-    border-radius:0 6px 6px 0;padding:14px 18px;margin:0 0 12px}
-  .bug p{margin:0;font-size:15px;max-width:74ch}
-  .bughdr{font-family:ui-monospace,Menlo,monospace;font-size:14px;margin-bottom:8px !important}
-  .sev{float:right;background:var(--amber);color:#1A1408;border-radius:3px;
-    padding:1px 8px;font:700 10.5px/1.6 system-ui,sans-serif;letter-spacing:.06em}
-  @media(max-width:620px){.sev{float:none;display:inline-block;margin-top:4px}}
-  </style>
+
+  <p class="hint" style="margin:0 0 8px">Items 1 through 3 were open the entire time
+  the Shuttle flew, and are open now. Item 4 is open in any surviving copy of the
+  compiler.</p>
+  <p class="hint" style="margin:0 0 40px">For completeness, this project&rsquo;s own
+  defects are tracked in the same file &mdash; the MVH decrement-order bug a Shuttle
+  physics program caught, found and fixed with a regression test. A resurrection that
+  only lists other people&rsquo;s bugs is not being honest, but they belong in an
+  appendix, not alongside the flight system&rsquo;s.</p>
   <h2 class="sect" id="run">Run all of it yourself</h2>
   <p style="max-width:72ch;margin:0 0 14px">Everything on this page is a program you
   can run. The emulator is one Rust project; the historical toolchain is Python. No
