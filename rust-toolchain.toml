@@ -1,0 +1,5 @@
+# This project's whole argument is reproducibility, so the toolchain is
+# named rather than left to whatever happens to be installed.
+[toolchain]
+channel = "stable"
+components = ["rustfmt", "clippy"]

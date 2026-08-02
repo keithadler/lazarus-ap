@@ -1,10 +1,6 @@
 # Build output
 /target
 
-# Cargo.lock is omitted: this is a library-and-tools repo, not a
-# published binary, and the toolchain is pinned by rust-toolchain.
-Cargo.lock
-
 # Reference scans are large and are linked from docs/SOURCES.md instead
 *.pdf
 
