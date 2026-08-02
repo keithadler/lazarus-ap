@@ -159,18 +159,22 @@ fn automatic_index_modification() {
 }
 
 #[test]
-fn fullword_indirect_pointer_with_postindex_is_unimplemented() {
-    // §2.2.8 step 10 (fullword indirect address pointer with postindexing
-    // and BSV/DSV control bits, Figure 2-17): still out of scope; must
-    // trap, not guess. (The X=0 automatic-storage-modification form,
-    // Figure 2-15, IS implemented — see tests/special_ops.rs.)
-    let mut c = cpu8k();
-    c.set_r(6, 1 << 16);
-    let t = exec1_err(
+fn fullword_indirect_pointer_with_postindex() {
+    // §2.2.8 step 10 / Figure 2-17 (semantics cross-checked against
+    // yaGPC2): pointer fullword with address bits 1-15, Xc/C/CB/CD
+    // control bits, and BSV/DSV sector fields. Data reference, C=0:
+    // sector from the pointer's DSV; index added unless Xc.
+    let mut c = cpu_full();
+    c.set_r(6, 3 << 16); // index 3 (halfword op: unshifted)
+    // pointer at 0x010: address 0x0100, Xc=0, C=0, DSV=1
+    c.mem.write_f(0x010, (0x0100 << 16) | 0x0001).unwrap();
+    c.mem.write_h((1 << 15) | 0x0103, 0x77).unwrap(); // sector 1
+    // LH 2,0x10(6) with IA=1, I=1
+    exec1(
         &mut c,
-        &[0b00011_010_11110_101, (0b110 << 13) | (1 << 12) | (1 << 11) | 0x010],
+        &[0b10000_010_11110_101, (0b110 << 13) | (1 << 12) | (1 << 11) | 0x010],
     );
-    assert!(matches!(t, Trap::UnimplementedAddressing { .. }));
+    assert_eq!(c.r(2) >> 16, 0x77, "sector from DSV, index applied");
 }
 
 // ---------- expanded addressing (§2.2.9) ----------
