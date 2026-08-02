@@ -11,11 +11,18 @@ instruction-level test suite. No HAL/S compiler, no flight software yet.
 
 ## What works
 
-- 84 instructions of the fixed-point, branching, shift, and logical
-  sections of the Shuttle instruction set, each implemented from its
-  Principles-of-Operation page and covered by tests asserting encoding,
-  effect, and condition code — including the carry/overflow indicator
-  rules that existing emulators skip.
+- 121 instructions: the fixed-point, branching, shift, and logical
+  sections plus (phase 2) the full floating-point set — IBM hexadecimal
+  short/long formats with guard-digit prealignment and the §8.8
+  exception rules — and the status-switching set (LPS, SPM, SSM, SVC,
+  TS). Each is implemented from its Principles-of-Operation page and
+  covered by tests asserting encoding, effect, and condition code —
+  including the carry/overflow indicator rules that existing emulators
+  skip.
+- Program-exception and SVC interrupts: real PSW swaps through the
+  preferred storage area (old/new PSW pairs at 0x48/0x4C and 0x58/0x5C),
+  interrupt codes, privileged-instruction checking, wait state, and
+  register-set switching on interrupt entry.
 - Full RR/SRS/RS/RI/SI decode of the §13 op-code assignment tables
   (unassigned encodings are illegal-instruction traps).
 - Effective-address generation: SRS (with fullword displacement
@@ -29,9 +36,9 @@ instruction-level test suite. No HAL/S compiler, no flight software yet.
 
 ## What doesn't (yet — all trap rather than guess)
 
-- Floating point (format documented and verified; execution is phase 2).
-- Interrupts, storage protection, I/O (IOP), privileged/status-switching
-  instructions, DSE loading, and the fullword-indirect addressing modes.
+- Machine-check/system/timer interrupts, storage protection, I/O (IOP),
+  the stack and DSE-loading instructions (SCAL/SRET, LXA/LDM...), MVH,
+  and the fullword-indirect addressing modes.
 - Timing: this is an instruction-level emulator, not cycle-accurate.
 
 See [docs/ISA_STATUS.md](docs/ISA_STATUS.md) for the per-instruction
@@ -50,7 +57,7 @@ cargo build
 cargo test
 ```
 
-`cargo test` runs the whole suite (~110 tests: unit, per-instruction,
+`cargo test` runs the whole suite (135 tests: unit, per-instruction,
 addressing-mode, and golden-trace) and reports pass/fail per test.
 
 ## Run a program

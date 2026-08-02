@@ -65,7 +65,14 @@ pub enum Instr {
     X, Xr, Xhi, Xist, Xst,
     O, Or, Ohi, Ost,
     Sum, Sb, Shw, Tb, Trb, Th, Zb, Zrb, Zh,
-    /// Known encoding, execution not implemented in phase 1.
+    // Floating point (§8)
+    Aer, Ae, Aedr, Aed, Ser, Se, Sedr, Sed,
+    Cer, Ce, Cedr, Ced, Mer, Me, Medr, Med,
+    Der, De, Dedr, Ded, Ler, Le, Led, Lecr,
+    Ste, Sted, Cvfx, Cvfl, Mvs, Lfli, Lflr, Lfxr,
+    // Status switching / special (§2.5, §9)
+    Lps, Spm, Ssm, Svc, Ts,
+    /// Known encoding, execution not implemented yet.
     NotImplemented(&'static str),
 }
 
@@ -114,6 +121,9 @@ pub enum DecodeError {
 pub enum Width {
     Half,
     Full,
+    /// Doubleword storage operand (long floating point): index alignment
+    /// shifts the index value two positions left (§14.1).
+    Double,
 }
 
 impl Instr {
@@ -126,7 +136,9 @@ impl Instr {
         use Instr::*;
         match self {
             A | Ast | C | D | L | M | St | S | Sst
-            | N | Nst | X | Xst | O | Ost | Lm | Stm => Width::Full,
+            | N | Nst | X | Xst | O | Ost | Lm | Stm
+            | Ae | Se | Ce | Me | De | Le | Ste | Mvs | Lps => Width::Full,
+            Aed | Sed | Ced | Med | Ded | Led | Sted => Width::Double,
             _ => Width::Half,
         }
     }
@@ -134,7 +146,7 @@ impl Instr {
     /// LM, STM (and LPS/ISPB, unimplemented) always use halfword index
     /// alignment (§14.1).
     pub fn halfword_index_alignment(self) -> bool {
-        matches!(self, Instr::Lm | Instr::Stm)
+        matches!(self, Instr::Lm | Instr::Stm | Instr::Lps)
     }
 
     pub fn mnemonic(self) -> &'static str {
@@ -158,6 +170,16 @@ impl Instr {
             Xist => "XIST", Xst => "XST", O => "O", Or => "OR", Ohi => "OHI",
             Ost => "OST", Sum => "SUM", Sb => "SB", Shw => "SHW", Tb => "TB",
             Trb => "TRB", Th => "TH", Zb => "ZB", Zrb => "ZRB", Zh => "ZH",
+            Aer => "AER", Ae => "AE", Aedr => "AEDR", Aed => "AED",
+            Ser => "SER", Se => "SE", Sedr => "SEDR", Sed => "SED",
+            Cer => "CER", Ce => "CE", Cedr => "CEDR", Ced => "CED",
+            Mer => "MER", Me => "ME", Medr => "MEDR", Med => "MED",
+            Der => "DER", De => "DE", Dedr => "DEDR", Ded => "DED",
+            Ler => "LER", Le => "LE", Led => "LED", Lecr => "LECR",
+            Ste => "STE", Sted => "STED", Cvfx => "CVFX", Cvfl => "CVFL",
+            Mvs => "MVS", Lfli => "LFLI", Lflr => "LFLR", Lfxr => "LFXR",
+            Lps => "LPS", Spm => "SPM", Ssm => "SSM", Svc => "SVC",
+            Ts => "TS",
             NotImplemented(m) => m,
         }
     }
@@ -176,15 +198,15 @@ fn srs_slot(op5: u8) -> Option<Instr> {
         0b00100 => Some(N),
         0b00101 => Some(O),
         0b00110 => Some(St),
-        0b00111 => Some(NotImplemented("STE")),
+        0b00111 => Some(Ste),
         0b01000 => Some(M),
         0b01001 => Some(D),
-        0b01010 => Some(NotImplemented("AE")),
-        0b01011 => Some(NotImplemented("SE")),
-        0b01100 => Some(NotImplemented("ME")),
-        0b01101 => Some(NotImplemented("DE")),
+        0b01010 => Some(Ae),
+        0b01011 => Some(Se),
+        0b01100 => Some(Me),
+        0b01101 => Some(De),
         0b01110 => Some(X),
-        0b01111 => Some(NotImplemented("LE")),
+        0b01111 => Some(Le),
         0b10000 => Some(Ah),
         0b10001 => Some(Sh),
         0b10010 => Some(Ch),
@@ -206,15 +228,15 @@ fn rr_slot(op5: u8, r2: u8) -> Option<Instr> {
         0b00011 => Some(Lr),
         0b00100 => Some(Nr),
         0b00101 => Some(Or),
-        0b00111 => Some(NotImplemented("CVFX")),
+        0b00111 => Some(Cvfx),
         0b01000 => Some(Mr),
         0b01001 => Some(Dr),
-        0b01010 => Some(NotImplemented("AER")),
-        0b01011 => Some(NotImplemented("SER")),
-        0b01100 => Some(NotImplemented("MER")),
-        0b01101 => Some(NotImplemented("DER")),
+        0b01010 => Some(Aer),
+        0b01011 => Some(Ser),
+        0b01100 => Some(Mer),
+        0b01101 => Some(Der),
         0b01110 => Some(Xr),
-        0b01111 => Some(NotImplemented("LER")),
+        0b01111 => Some(Ler),
         0b11000 => Some(Bcr),
         0b11001 => Some(Bvcr),
         0b11010 => Some(Bctr),
@@ -232,24 +254,24 @@ fn rr2_slot(op5: u8, r1: u8) -> Option<Instr> {
     match op5 {
         0b00000 => Some(Xul),
         0b00001 => Some(Cbl),
-        0b00010 => Some(NotImplemented("DEDR")),
-        0b00011 => Some(NotImplemented("CEDR")),
-        0b00100 => Some(NotImplemented("LFXR")),
-        0b00101 => Some(NotImplemented("LFLR")),
-        0b00110 => Some(NotImplemented("MEDR")),
-        0b00111 => Some(NotImplemented("CVFL")),
+        0b00010 => Some(Dedr),
+        0b00011 => Some(Cedr),
+        0b00100 => Some(Lfxr),
+        0b00101 => Some(Lflr),
+        0b00110 => Some(Medr),
+        0b00111 => Some(Cvfl),
         0b01000 => Some(NotImplemented("LXAR")),
-        0b01001 => Some(NotImplemented("CER")),
-        0b01010 => Some(NotImplemented("AEDR")),
-        0b01011 => Some(NotImplemented("SEDR")),
+        0b01001 => Some(Cer),
+        0b01010 => Some(Aedr),
+        0b01011 => Some(Sedr),
         0b01101 => Some(NotImplemented("MVH")),
-        0b01111 => Some(NotImplemented("LECR")),
+        0b01111 => Some(Lecr),
         0b10010 => Some(NotImplemented("SRET")),
         0b10011 => Some(Sum),
         0b10100 => Some(NotImplemented("STXAR")),
         0b11000 => Some(Bcre),
         0b11001 => match r1 {
-            0b000 => Some(NotImplemented("SPM")),
+            0b000 => Some(Spm),
             _ => None,
         },
         0b11011 => Some(NotImplemented("PC")),
@@ -277,26 +299,26 @@ fn rs2_slot(op5: u8, r1: u8) -> Option<Instr> {
     match op5 {
         0b00000 => Some(Ast),
         0b00001 => Some(Sst),
-        0b00010 => Some(NotImplemented("DED")),
-        0b00011 => Some(NotImplemented("CED")),
+        0b00010 => Some(Ded),
+        0b00011 => Some(Ced),
         0b00100 => Some(Nst),
         0b00101 => Some(Ost),
-        0b00110 => Some(NotImplemented("MED")),
-        0b00111 => Some(NotImplemented("STED")),
+        0b00110 => Some(Med),
+        0b00111 => Some(Sted),
         0b01000 => Some(NotImplemented("LXA")),
-        0b01001 => Some(NotImplemented("CE")),
-        0b01010 => Some(NotImplemented("AED")),
-        0b01011 => Some(NotImplemented("SED")),
-        0b01100 => Some(NotImplemented("MVS")),
+        0b01001 => Some(Ce),
+        0b01010 => Some(Aed),
+        0b01011 => Some(Sed),
+        0b01100 => Some(Mvs),
         0b01101 => match r1 {
             0b000 => Some(NotImplemented("LDM")),
             _ => None,
         },
         0b01110 => Some(Xst),
-        0b01111 => Some(NotImplemented("LED")),
+        0b01111 => Some(Led),
         0b10000 => Some(Ihl),
         0b10001 => match r1 {
-            0b000 => Some(NotImplemented("SSM")),
+            0b000 => Some(Ssm),
             _ => None,
         },
         0b10010 => match r1 {
@@ -306,15 +328,15 @@ fn rs2_slot(op5: u8, r1: u8) -> Option<Instr> {
         0b10011 => Some(Mih),
         0b10100 => Some(NotImplemented("STXA")),
         0b10111 => match r1 {
-            0b000 => Some(NotImplemented("TS")),
+            0b000 => Some(Ts),
             _ => None,
         },
         0b11000 => Some(NotImplemented("DIAG")),
         0b11001 => match r1 {
             0b000 => Some(Stm),
-            0b001 => Some(NotImplemented("SVC")),
+            0b001 => Some(Svc),
             0b100 => Some(Lm),
-            0b101 => Some(NotImplemented("LPS")),
+            0b101 => Some(Lps),
             _ => None,
         },
         0b11010 => Some(NotImplemented("SCAL")),
@@ -424,7 +446,7 @@ pub fn decode(hw1: u16, hw2: u16) -> Result<Decoded, DecodeError> {
             return mk(Lfxi, r1, Operand::None, (low & 0xF) as u16, 1);
         }
         if op5 == 0b10001 {
-            return mk(NotImplemented("LFLI"), r1, Operand::None, (low & 0xF) as u16, 1);
+            return mk(Lfli, r1, Operand::None, (low & 0xF) as u16, 1);
         }
         let r2 = low & 0b111;
         if low & 0b0000_1000 == 0 {
@@ -642,14 +664,17 @@ mod tests {
 
     #[test]
     fn not_implemented_decodes() {
-        // Floating point decodes (so traps can name it) but is Unimplemented.
+        // Still-unimplemented specials decode (so traps can name them).
         assert_eq!(
-            d1(0b01010_001_11100_010).instr,
-            Instr::NotImplemented("AER")
+            d1(0b01101_001_11101_010).instr,
+            Instr::NotImplemented("MVH")
         );
         assert_eq!(
-            decode(0b11001_101_11111_000, 0).unwrap().instr,
-            Instr::NotImplemented("LPS")
+            decode(0b11010_001_11111_000, 0).unwrap().instr,
+            Instr::NotImplemented("SCAL")
         );
+        // Floating point now decodes to real instructions.
+        assert_eq!(d1(0b01010_001_11100_010).instr, Instr::Aer);
+        assert_eq!(decode(0b11001_101_11111_000, 0).unwrap().instr, Instr::Lps);
     }
 }

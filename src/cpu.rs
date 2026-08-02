@@ -5,8 +5,32 @@
 //! in comments refer to that manual.
 
 use crate::decode::{self, Decoded, Instr, Operand, Width};
+use crate::float::{self, FpEvent, Precision, Unpacked};
 use crate::mem::{AddressError, Memory};
 use crate::psw::{cc, Psw};
+
+/// Preferred storage area old/new PSW locations (§2.5.2, Figure 2-20/2-21).
+pub mod psa {
+    /// Program-exception class (illegal op, privileged op, fixed/floating
+    /// overflow, underflow, significance, divide, convert overflow).
+    pub const PROGRAM_OLD: u32 = 0x0048;
+    pub const PROGRAM_NEW: u32 = 0x004C;
+    /// Supervisor call.
+    pub const SVC_OLD: u32 = 0x0058;
+    pub const SVC_NEW: u32 = 0x005C;
+}
+
+/// Program-exception interrupt codes (§2.5.2 Figure 2-20).
+pub mod pe_code {
+    pub const ILLEGAL: u16 = 0x0000;
+    pub const PRIVILEGED: u16 = 0x0001;
+    pub const FIXED_OVERFLOW: u16 = 0x0004;
+    pub const SIGNIFICANCE: u16 = 0x0005;
+    pub const FP_UNDERFLOW: u16 = 0x0009;
+    pub const CONVERT_OVERFLOW: u16 = 0x000A;
+    pub const FP_OVERFLOW: u16 = 0x000B;
+    pub const FP_DIVIDE: u16 = 0x000C;
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Trap {
@@ -21,10 +45,11 @@ pub enum Trap {
     /// pointer modes (RS indexed with I=1 and IA=1, §2.2.8 steps 7/10,
     /// Figure 2-17).
     UnimplementedAddressing { at: u32 },
-    /// A fixed-point overflow occurred while the fixed-point overflow mask
-    /// (PSW bit 20) allows the interrupt. Phase 1 has no interrupt system,
-    /// so the emulator halts here instead of PSW-swapping.
-    FixedPointOverflow { at: u32 },
+    /// An interrupt fired but its PSA "new PSW" doubleword is all zero —
+    /// no handler was installed. Architecturally the machine would load a
+    /// zero PSW and execute from address 0; the emulator halts with the
+    /// pending interrupt code instead (documented convention).
+    UninitializedInterrupt { code: u16, at: u32 },
 }
 
 /// Why `run` stopped.
@@ -144,10 +169,13 @@ impl Cpu {
     /// always use halfword alignment (§14.1).
     fn aligned_index(&self, x: u8, instr: Instr) -> u16 {
         let idx = self.r_upper(x);
+        if instr.halfword_index_alignment() {
+            return idx;
+        }
         match instr.width() {
             Width::Half => idx,
-            Width::Full if instr.halfword_index_alignment() => idx,
             Width::Full => idx << 1,
+            Width::Double => idx << 2,
         }
     }
 
@@ -168,6 +196,9 @@ impl Cpu {
                 let scaled = match instr.width() {
                     Width::Half => d as u16,
                     Width::Full => (d as u16) << 1,
+                    // Long floating point has no SRS forms (§8 encodings);
+                    // unreachable but harmless.
+                    Width::Double => (d as u16) << 2,
                 };
                 (self.r_upper(b2).wrapping_add(scaled), Some(b2))
             }
@@ -380,15 +411,31 @@ impl Cpu {
         (r, ovf)
     }
 
-    /// Fixed-point overflow program interrupt: taken only when PSW bit 20
-    /// allows it (§2.5.1.1, interrupt table). No interrupt system in phase
-    /// 1 — the emulator traps instead.
-    fn fixed_overflow(&self, ovf: bool, at: u32) -> Result<(), Trap> {
-        if ovf && self.psw.fixed_overflow_mask {
-            Err(Trap::FixedPointOverflow { at })
-        } else {
-            Ok(())
+    // ----- interrupts (§2.5.2) -----
+
+    /// PSW swap: store the current PSW at `old`, load the PSW at `new`
+    /// (§2.5.2.1). If the new-PSW doubleword is uninitialized (all zero),
+    /// the emulator halts with `UninitializedInterrupt` instead of
+    /// executing from a zero PSW.
+    fn psw_swap(&mut self, old: u32, new: u32, at: u32) -> Result<(), Trap> {
+        let w0 = self.mem.read_f(new).map_err(|e| trap_addr(e, at))?;
+        let w1 = self.mem.read_f(new + 2).map_err(|e| trap_addr(e, at))?;
+        if w0 == 0 && w1 == 0 {
+            return Err(Trap::UninitializedInterrupt { code: self.psw.int_code, at });
         }
+        self.mem.write_f(old, self.psw.word0()).map_err(|e| trap_addr(e, at))?;
+        let word1 = self.psw.word1();
+        self.mem.write_f(old + 2, word1).map_err(|e| trap_addr(e, at))?;
+        self.psw.set_word0(w0);
+        self.psw.set_word1(w1);
+        Ok(())
+    }
+
+    /// Program-exception interrupt with the given code (Figure 2-20). The
+    /// code is recorded in the stored (old) PSW.
+    fn program_interrupt(&mut self, code: u16, at: u32) -> Result<(), Trap> {
+        self.psw.int_code = code;
+        self.psw_swap(psa::PROGRAM_OLD, psa::PROGRAM_NEW, at)
     }
 
     // ----- fetch/execute -----
@@ -400,8 +447,23 @@ impl Cpu {
         let hw1 = self.read_h(at, at)?;
         // The second halfword is fetched only if the format needs it.
         let hw2 = self.mem.read_h(at.wrapping_add(1)).unwrap_or(0);
-        let dec = decode::decode(hw1, hw2)
-            .map_err(|decode::DecodeError::Illegal { hw1 }| Trap::IllegalInstruction { hw1, at })?;
+        let dec = match decode::decode(hw1, hw2) {
+            Ok(d) => d,
+            Err(decode::DecodeError::Illegal { hw1 }) => {
+                // Illegal instruction: unmaskable program exception, code
+                // 0000 (Figure 2-20). IC is left at the offending
+                // instruction (the table marks the stored PC "can vary").
+                return self
+                    .program_interrupt(pe_code::ILLEGAL, at)
+                    .map(|()| at)
+                    .map_err(|t| match t {
+                        Trap::UninitializedInterrupt { .. } => {
+                            Trap::IllegalInstruction { hw1, at }
+                        }
+                        other => other,
+                    });
+            }
+        };
         if dec.len == 2 {
             // Ensure the second halfword really was addressable.
             self.read_h(at.wrapping_add(1), at)?;
@@ -411,6 +473,12 @@ impl Cpu {
         // arithmetic uses the updated IC (§2.2.8, §5.4, §5.6).
         self.psw.ic = self.psw.ic.wrapping_add(dec.len as u16);
         self.exec(&dec, at)?;
+        // ENDOP fixed-point overflow interrupt: taken whenever the overflow
+        // indicator (PSW 19) and its mask (PSW 20) are both set — including
+        // via SPM/LPS loading such a PSW (§2.5.2.3 note, §9.3/9.5).
+        if self.psw.overflow && self.psw.fixed_overflow_mask {
+            self.program_interrupt(pe_code::FIXED_OVERFLOW, at)?;
+        }
         self.steps += 1;
         Ok(at)
     }
@@ -444,57 +512,50 @@ impl Cpu {
             // ---- fixed point: add/subtract (§4.1-4.4, 4.28-4.30) ----
             A | Ar => {
                 let op = self.fetch_full(dec, at)?;
-                let (r, ovf) = self.add_flags(self.r(r1), op);
+                let (r, _) = self.add_flags(self.r(r1), op);
                 self.set_r(r1, r);
                 self.cc_value32(r);
-                self.fixed_overflow(ovf, at)?;
             }
             Ah => {
                 let op = self.fetch_half_developed(dec, at)?;
-                let (r, ovf) = self.add_flags(self.r(r1), op);
+                let (r, _) = self.add_flags(self.r(r1), op);
                 self.set_r(r1, r);
                 self.cc_value32(r);
-                self.fixed_overflow(ovf, at)?;
             }
             Ahi => {
                 let op = (dec.imm as u32) << 16;
-                let (r, ovf) = self.add_flags(self.r(r1), op);
+                let (r, _) = self.add_flags(self.r(r1), op);
                 self.set_r(r1, r);
                 self.cc_value32(r);
-                self.fixed_overflow(ovf, at)?;
             }
             Ast => {
                 // R1 + second operand -> second operand location (§4.4).
                 let addr = self.storage_addr(dec, at)?;
                 let op = self.mem.read_f(addr).map_err(|e| trap_addr(e, at))?;
-                let (r, ovf) = self.add_flags(self.r(r1), op);
+                let (r, _) = self.add_flags(self.r(r1), op);
                 self.mem.write_f(addr, r).map_err(|e| trap_addr(e, at))?;
                 self.cc_value32(r);
-                self.fixed_overflow(ovf, at)?;
             }
             S | Sr => {
                 let op = self.fetch_full(dec, at)?;
-                let (r, ovf) = self.sub_flags(self.r(r1), op);
+                let (r, _) = self.sub_flags(self.r(r1), op);
                 self.set_r(r1, r);
                 self.cc_value32(r);
-                self.fixed_overflow(ovf, at)?;
             }
             Sh => {
                 let op = self.fetch_half_developed(dec, at)?;
-                let (r, ovf) = self.sub_flags(self.r(r1), op);
+                let (r, _) = self.sub_flags(self.r(r1), op);
                 self.set_r(r1, r);
                 self.cc_value32(r);
-                self.fixed_overflow(ovf, at)?;
             }
             Sst => {
                 // R1 subtracted FROM the second operand; result to storage
                 // (§4.29).
                 let addr = self.storage_addr(dec, at)?;
                 let op = self.mem.read_f(addr).map_err(|e| trap_addr(e, at))?;
-                let (r, ovf) = self.sub_flags(op, self.r(r1));
+                let (r, _) = self.sub_flags(op, self.r(r1));
                 self.mem.write_f(addr, r).map_err(|e| trap_addr(e, at))?;
                 self.cc_value32(r);
-                self.fixed_overflow(ovf, at)?;
             }
 
             // ---- compares (§4.5-4.9) — indicators not changed ----
@@ -546,18 +607,15 @@ impl Cpu {
             // ---- multiply / divide (§4.10, 4.21-4.24) ----
             M | Mr => {
                 let op = self.fetch_full(dec, at)?;
-                let ovf = self.multiply_frac32(r1, op);
-                self.fixed_overflow(ovf, at)?;
+                self.multiply_frac32(r1, op);
             }
             Mh => {
                 let addr = self.storage_addr(dec, at)?;
                 let b = self.read_h(addr, at)?;
-                let ovf = self.multiply_frac16(r1, b);
-                self.fixed_overflow(ovf, at)?;
+                self.multiply_frac16(r1, b);
             }
             Mhi => {
-                let ovf = self.multiply_frac16(r1, dec.imm);
-                self.fixed_overflow(ovf, at)?;
+                self.multiply_frac16(r1, dec.imm);
             }
             Mih => {
                 // Integer halfword multiply (§4.24): 16x16 integer product;
@@ -572,12 +630,10 @@ impl Cpu {
                     self.psw.overflow = true;
                 }
                 self.set_r(r1, (p as u16 as u32) << 16);
-                self.fixed_overflow(ovf, at)?;
             }
             D | Dr => {
                 let op = self.fetch_full(dec, at)?;
-                let ovf = self.divide_frac(r1, op as i32);
-                self.fixed_overflow(ovf, at)?;
+                self.divide_frac(r1, op as i32);
             }
 
             // ---- data movement (§4.11-4.20, 4.25-4.27) ----
@@ -632,7 +688,6 @@ impl Cpu {
                     self.psw.overflow = true;
                 }
                 self.psw.carry = op == 0;
-                self.fixed_overflow(ovf, at)?;
             }
             Lfxi => {
                 // Immediate values -2..13 selected by the 4-bit value code,
@@ -899,8 +954,417 @@ impl Cpu {
             Sum => {
                 self.search_under_mask(dec, at)?;
             }
+
+            // ---- floating point (§8) ----
+            Aer | Ae | Ser | Se => {
+                let a = self.fpr_short(r1);
+                let b = self.fp_operand_short(dec, at)?;
+                let negate = matches!(dec.instr, Ser | Se);
+                let (r, ev) = float::add(a, b, negate, Precision::Short);
+                self.fp_finish_short(r1, r, ev, true, at)?;
+            }
+            Aedr | Aed | Sedr | Sed => {
+                let a = self.fpr_long(r1);
+                let b = self.fp_operand_long(dec, at)?;
+                let negate = matches!(dec.instr, Sedr | Sed);
+                let (r, ev) = float::add(a, b, negate, Precision::Long);
+                self.fp_finish_long(r1, r, ev, true, at)?;
+            }
+            Cer | Ce => {
+                let a = self.fpr_short(r1);
+                let b = self.fp_operand_short(dec, at)?;
+                self.fp_cc_compare(float::compare(a, b, Precision::Short));
+            }
+            Cedr | Ced => {
+                let a = self.fpr_long(r1);
+                let b = self.fp_operand_long(dec, at)?;
+                self.fp_cc_compare(float::compare(a, b, Precision::Long));
+            }
+            Mer | Me => {
+                // §8.25: even R1 receives the full-precision product in the
+                // register pair; odd R1 a 32-bit product. CC unchanged.
+                let a = self.fpr_short(r1);
+                let b = self.fp_operand_short(dec, at)?;
+                let p = if r1 % 2 == 0 { Precision::Long } else { Precision::Short };
+                let (r, ev) = float::multiply(a, b, p);
+                if r1 % 2 == 0 {
+                    self.fp_finish_long(r1, r, ev, false, at)?;
+                } else {
+                    self.fp_finish_short(r1, r, ev, false, at)?;
+                }
+            }
+            Medr | Med => {
+                let a = self.fpr_long(r1);
+                let b = self.fp_operand_long(dec, at)?;
+                let (r, ev) = float::multiply(a, b, Precision::Long);
+                self.fp_finish_long(r1, r, ev, false, at)?;
+            }
+            Der | De => {
+                let a = self.fpr_short(r1);
+                let b = self.fp_operand_short(dec, at)?;
+                let (r, ev) = float::divide(a, b, Precision::Short);
+                self.fp_finish_short(r1, r, ev, false, at)?;
+            }
+            Dedr | Ded => {
+                let a = self.fpr_long(r1);
+                let b = self.fp_operand_long(dec, at)?;
+                let (r, ev) = float::divide(a, b, Precision::Long);
+                self.fp_finish_long(r1, r, ev, false, at)?;
+            }
+            Ler | Le => {
+                // §8.18: loads do not normalize; CC from the fraction only.
+                let w = match dec.operand {
+                    Operand::R(r2) => self.fpr[(r2 & 7) as usize],
+                    _ => {
+                        let addr = self.storage_addr(dec, at)?;
+                        self.mem.read_f(addr).map_err(|e| trap_addr(e, at))?
+                    }
+                };
+                self.fpr[(r1 & 7) as usize] = w;
+                self.fp_cc_value(float::unpack_short(w));
+            }
+            Led => {
+                let addr = self.storage_addr(dec, at)?;
+                let hi = self.mem.read_f(addr).map_err(|e| trap_addr(e, at))?;
+                let lo = self.mem.read_f(addr + 2).map_err(|e| trap_addr(e, at))?;
+                self.fpr[(r1 & 7) as usize] = hi;
+                self.fpr[((r1 + 1) % 8) as usize] = lo;
+                self.fp_cc_value(float::unpack_long(hi, lo));
+            }
+            Lecr => {
+                // §8.19: sign inverted; a zero-fraction operand loads as a
+                // true zero; (R1+1) unchanged.
+                let r2 = operand_reg(dec);
+                let w = self.fpr[(r2 & 7) as usize];
+                let out = if w & 0x00FF_FFFF == 0 { 0 } else { w ^ 0x8000_0000 };
+                self.fpr[(r1 & 7) as usize] = out;
+                self.fp_cc_value(float::unpack_short(out));
+            }
+            Ste => {
+                let addr = self.storage_addr(dec, at)?;
+                self.mem
+                    .write_f(addr, self.fpr[(r1 & 7) as usize])
+                    .map_err(|e| trap_addr(e, at))?;
+            }
+            Sted => {
+                let addr = self.storage_addr(dec, at)?;
+                self.mem
+                    .write_f(addr, self.fpr[(r1 & 7) as usize])
+                    .map_err(|e| trap_addr(e, at))?;
+                self.mem
+                    .write_f(addr + 2, self.fpr[((r1 + 1) % 8) as usize])
+                    .map_err(|e| trap_addr(e, at))?;
+            }
+            Cvfx => {
+                // §8.13: unnormalize to characteristic 0x44 and convert to a
+                // twos-complement fixed value with the binary point between
+                // bits 15 and 16, truncated. Out-of-range: convert overflow.
+                let r2 = operand_reg(dec);
+                let u = self.fpr_short(r2);
+                if u.is_zero() {
+                    self.set_r(r1, 0);
+                    self.psw.cc = cc::ZERO;
+                } else {
+                    // value * 2^16 = frac(56-bit) * 16^(ch-64) / 16^14 * 2^16
+                    let shift = 4 * u.ch - 296; // 4*(ch-64) + 16 - 56
+                    let mag: i128 = if shift >= 0 {
+                        (u.frac as i128) << shift.min(80)
+                    } else {
+                        (u.frac as i128) >> (-shift).min(127)
+                    };
+                    let v = if u.neg { -mag } else { mag };
+                    if v > i32::MAX as i128 || v < i32::MIN as i128 {
+                        return self.program_interrupt(pe_code::CONVERT_OVERFLOW, at);
+                    }
+                    let v = v as i32 as u32;
+                    self.set_r(r1, v);
+                    self.cc_value16((v >> 16) as u16);
+                }
+            }
+            Cvfl => {
+                // §8.14: fixed (binary point between bits 15/16) to short
+                // float via characteristic 0x44 and normalization.
+                let r2 = operand_reg(dec);
+                let v = self.r(r2) as i32;
+                if v == 0 {
+                    self.fpr[(r1 & 7) as usize] = 0;
+                    self.psw.cc = cc::ZERO;
+                } else {
+                    let u = Unpacked {
+                        neg: v < 0,
+                        ch: 0x44,
+                        frac: (v.unsigned_abs() as u64) << 24,
+                    };
+                    let (n, _) = float::normalize_value(u, Precision::Short);
+                    self.fpr[(r1 & 7) as usize] = float::pack_short(n);
+                    self.fp_cc_value(n);
+                }
+            }
+            Mvs => {
+                // §8.23: midvalue of FPR R1, FPR (R1+1) [upper limit] and
+                // the storage operand [lower limit]; CC per the limiter
+                // table; the normalized midvalue replaces R1.
+                let v = self.fpr_short(r1);
+                let upper = self.fpr_short((r1 + 1) % 8);
+                let addr = self.storage_addr(dec, at)?;
+                let m = self.mem.read_f(addr).map_err(|e| trap_addr(e, at))?;
+                let lower = float::unpack_short(m);
+                let (sel, code) = if float::compare(v, upper, Precision::Short) > 0 {
+                    (upper, cc::POS)
+                } else if float::compare(v, lower, Precision::Short) < 0 {
+                    (lower, cc::NEG)
+                } else {
+                    (v, cc::ZERO)
+                };
+                self.psw.cc = code;
+                let (n, ev) = float::normalize_value(sel, Precision::Short);
+                match ev {
+                    FpEvent::Underflow if self.psw.exp_underflow_mask => {
+                        return self.program_interrupt(pe_code::FP_UNDERFLOW, at);
+                    }
+                    FpEvent::Underflow => self.fpr[(r1 & 7) as usize] = 0,
+                    _ => self.fpr[(r1 & 7) as usize] = float::pack_short(n),
+                }
+            }
+            Lfli => {
+                // §8.21: value code 0 = true zero, n = float n (0x41n00000).
+                let code = dec.imm as u32 & 0xF;
+                self.fpr[(r1 & 7) as usize] =
+                    if code == 0 { 0 } else { 0x4100_0000 | (code << 20) };
+            }
+            Lflr => {
+                let r2 = operand_reg(dec);
+                self.fpr[(r1 & 7) as usize] = self.r(r2);
+            }
+            Lfxr => {
+                let r2 = operand_reg(dec);
+                self.set_r(r1, self.fpr[(r2 & 7) as usize]);
+            }
+
+            // ---- status switching (§2.5, §9) ----
+            Lps => {
+                // §9.3: privileged; two fullwords replace the PSW. CC and
+                // indicators come from the new PSW; the ENDOP fixed-point
+                // overflow check applies to the loaded PSW.
+                if self.privileged_violation(at)? {
+                    return Ok(());
+                }
+                let addr = self.storage_addr(dec, at)?;
+                let w0 = self.mem.read_f(addr).map_err(|e| trap_addr(e, at))?;
+                let w1 = self.mem.read_f(addr + 2).map_err(|e| trap_addr(e, at))?;
+                self.psw.set_word0(w0);
+                self.psw.set_word1(w1);
+            }
+            Spm => {
+                // §9.5: R2 bits 16-23 replace CC, carry, overflow, and the
+                // three arithmetic masks.
+                let r2 = operand_reg(dec);
+                let v = self.r(r2);
+                self.psw.cc = ((v >> 14) & 3) as u8;
+                self.psw.carry = v & (1 << 13) != 0;
+                self.psw.overflow = v & (1 << 12) != 0;
+                self.psw.fixed_overflow_mask = v & (1 << 11) != 0;
+                self.psw.exp_underflow_mask = v & (1 << 9) != 0;
+                self.psw.significance_mask = v & (1 << 8) != 0;
+            }
+            Ssm => {
+                // §9.6: privileged; the halfword operand replaces PSW bits
+                // 32-47 (system mask, EA-high, register set, machine check
+                // mask, wait, problem state).
+                if self.privileged_violation(at)? {
+                    return Ok(());
+                }
+                let addr = self.storage_addr(dec, at)?;
+                let hw = self.read_h(addr, at)?;
+                let word1 = ((hw as u32) << 16) | self.psw.int_code as u32;
+                self.psw.set_word1(word1);
+            }
+            Svc => {
+                // §9.9: interruption via the SVC PSW pair; the 16-bit EA is
+                // the interrupt code and the 4-bit sector extension goes to
+                // old-PSW bits 40-43. Cannot be masked.
+                let (ea16, addr19) = match self.resolve(dec, at, false)? {
+                    Ea::Mem { ea16, addr } => (ea16, addr),
+                    Ea::Reg(_) => unreachable!("SVC has storage operand"),
+                };
+                self.psw.ea_high = ((addr19 >> 15) & 0xF) as u8;
+                self.psw.int_code = ea16;
+                self.psw_swap(psa::SVC_OLD, psa::SVC_NEW, at)?;
+            }
+            Ts => {
+                // §9.10: test the halfword (three-state CC, all-ones mask)
+                // then set it to all ones, atomically.
+                let addr = self.storage_addr(dec, at)?;
+                let v = self.read_h(addr, at)?;
+                self.cc_test(v as u32, 0xFFFF);
+                self.mem.write_h(addr, 0xFFFF).map_err(|e| trap_addr(e, at))?;
+            }
         }
         Ok(())
+    }
+
+    // ----- floating point helpers -----
+
+    fn fpr_short(&self, n: u8) -> Unpacked {
+        float::unpack_short(self.fpr[(n & 7) as usize])
+    }
+
+    fn fpr_long(&self, n: u8) -> Unpacked {
+        float::unpack_long(
+            self.fpr[(n & 7) as usize],
+            self.fpr[((n + 1) % 8) as usize],
+        )
+    }
+
+    /// Short second operand: FPR (RR forms) or a storage fullword.
+    fn fp_operand_short(&mut self, dec: &Decoded, at: u32) -> Result<Unpacked, Trap> {
+        match dec.operand {
+            Operand::R(r2) => Ok(self.fpr_short(r2)),
+            _ => {
+                let addr = self.storage_addr(dec, at)?;
+                let w = self.mem.read_f(addr).map_err(|e| trap_addr(e, at))?;
+                Ok(float::unpack_short(w))
+            }
+        }
+    }
+
+    /// Long second operand: FPR pair (RR forms) or a storage doubleword.
+    fn fp_operand_long(&mut self, dec: &Decoded, at: u32) -> Result<Unpacked, Trap> {
+        match dec.operand {
+            Operand::R(r2) => Ok(self.fpr_long(r2)),
+            _ => {
+                let addr = self.storage_addr(dec, at)?;
+                let hi = self.mem.read_f(addr).map_err(|e| trap_addr(e, at))?;
+                let lo = self.mem.read_f(addr + 2).map_err(|e| trap_addr(e, at))?;
+                Ok(float::unpack_long(hi, lo))
+            }
+        }
+    }
+
+    /// CC for FP results: 00 zero fraction, 11 negative, 01 positive (§8.7).
+    fn fp_cc_value(&mut self, u: Unpacked) {
+        self.psw.cc = if u.is_zero() {
+            cc::ZERO
+        } else if u.neg {
+            cc::NEG
+        } else {
+            cc::POS
+        };
+    }
+
+    fn fp_cc_compare(&mut self, ord: i32) {
+        self.psw.cc = match ord {
+            0 => cc::ZERO,
+            o if o < 0 => cc::NEG,
+            _ => cc::POS,
+        };
+    }
+
+    /// Complete a short-precision FP operation: write the result and set
+    /// the CC (if `sets_cc`), honoring the §8.8 exception rules.
+    fn fp_finish_short(
+        &mut self,
+        r1: u8,
+        r: Unpacked,
+        ev: FpEvent,
+        sets_cc: bool,
+        at: u32,
+    ) -> Result<(), Trap> {
+        match ev {
+            FpEvent::None => {
+                self.fpr[(r1 & 7) as usize] = float::pack_short(r);
+                if sets_cc {
+                    self.fp_cc_value(r);
+                }
+                Ok(())
+            }
+            FpEvent::Overflow => self.program_interrupt(pe_code::FP_OVERFLOW, at),
+            FpEvent::Underflow => {
+                if self.psw.exp_underflow_mask {
+                    self.program_interrupt(pe_code::FP_UNDERFLOW, at)
+                } else {
+                    self.fpr[(r1 & 7) as usize] = 0;
+                    if sets_cc {
+                        self.psw.cc = cc::ZERO;
+                    }
+                    Ok(())
+                }
+            }
+            FpEvent::Significance => {
+                // True zero written regardless; interrupt if masked on.
+                self.fpr[(r1 & 7) as usize] = 0;
+                if sets_cc {
+                    self.psw.cc = cc::ZERO;
+                }
+                if self.psw.significance_mask {
+                    self.program_interrupt(pe_code::SIGNIFICANCE, at)
+                } else {
+                    Ok(())
+                }
+            }
+            FpEvent::DivideException => self.program_interrupt(pe_code::FP_DIVIDE, at),
+        }
+    }
+
+    fn fp_finish_long(
+        &mut self,
+        r1: u8,
+        r: Unpacked,
+        ev: FpEvent,
+        sets_cc: bool,
+        at: u32,
+    ) -> Result<(), Trap> {
+        let write = |cpu: &mut Cpu, u: Unpacked| {
+            let (hi, lo) = float::pack_long(u);
+            cpu.fpr[(r1 & 7) as usize] = hi;
+            cpu.fpr[((r1 + 1) % 8) as usize] = lo;
+        };
+        match ev {
+            FpEvent::None => {
+                write(self, r);
+                if sets_cc {
+                    self.fp_cc_value(r);
+                }
+                Ok(())
+            }
+            FpEvent::Overflow => self.program_interrupt(pe_code::FP_OVERFLOW, at),
+            FpEvent::Underflow => {
+                if self.psw.exp_underflow_mask {
+                    self.program_interrupt(pe_code::FP_UNDERFLOW, at)
+                } else {
+                    write(self, float::TRUE_ZERO);
+                    if sets_cc {
+                        self.psw.cc = cc::ZERO;
+                    }
+                    Ok(())
+                }
+            }
+            FpEvent::Significance => {
+                write(self, float::TRUE_ZERO);
+                if sets_cc {
+                    self.psw.cc = cc::ZERO;
+                }
+                if self.psw.significance_mask {
+                    self.program_interrupt(pe_code::SIGNIFICANCE, at)
+                } else {
+                    Ok(())
+                }
+            }
+            FpEvent::DivideException => self.program_interrupt(pe_code::FP_DIVIDE, at),
+        }
+    }
+
+    /// Privileged-instruction check (§2.3, §2.5.4.1): in problem state the
+    /// attempt produces a program interrupt with code 0001 and the
+    /// instruction is not executed. Returns true when the interrupt was
+    /// taken (caller must skip the instruction body).
+    fn privileged_violation(&mut self, at: u32) -> Result<bool, Trap> {
+        if self.psw.problem_state {
+            self.program_interrupt(pe_code::PRIVILEGED, at)?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
     }
 
     /// BC-family condition test (§5.3): M1 bit 5 tests CC=00, bit 6 tests
@@ -915,7 +1379,7 @@ impl Cpu {
     /// fractions is (a*b) << 1; even R1 receives the pair, odd R1 only the
     /// most significant half. Overflow only for (-1) x (-1). Returns
     /// whether overflow occurred; CC is not changed.
-    fn multiply_frac32(&mut self, r1: u8, op: u32) -> bool {
+    fn multiply_frac32(&mut self, r1: u8, op: u32) {
         let a = self.r(r1) as i32 as i64;
         let b = op as i32 as i64;
         let p = ((a * b) as u64) << 1;
@@ -927,12 +1391,11 @@ impl Cpu {
         if r1 % 2 == 0 {
             self.set_r((r1 + 1) % 8, p as u32);
         }
-        ovf
     }
 
     /// Fractional halfword multiply (§4.22/4.23): 32-bit product fraction
     /// of two halfword fractions, into all of R1.
-    fn multiply_frac16(&mut self, r1: u8, b: u16) -> bool {
+    fn multiply_frac16(&mut self, r1: u8, b: u16) {
         let a = (self.r(r1) >> 16) as u16 as i16 as i32;
         let b = b as i16 as i32;
         let p = ((a * b) as u32) << 1;
@@ -941,7 +1404,6 @@ impl Cpu {
             self.psw.overflow = true;
         }
         self.set_r(r1, p);
-        ovf
     }
 
     /// Fractional divide (§4.10): 64-bit dividend in R1:(R1+1)mod8 (odd R1:
@@ -949,7 +1411,7 @@ impl Cpu {
     /// Overflow (quotient unrepresentable or divide by zero) leaves the
     /// registers unchanged — the manual calls them indeterminate; this
     /// emulator's deterministic choice is documented in ISA_STATUS.md.
-    fn divide_frac(&mut self, r1: u8, divisor: i32) -> bool {
+    fn divide_frac(&mut self, r1: u8, divisor: i32) {
         let dividend: i64 = if r1 % 2 == 1 {
             (self.r(r1) as i64) << 32
         } else {
@@ -957,15 +1419,14 @@ impl Cpu {
         };
         if divisor == 0 {
             self.psw.overflow = true;
-            return true;
+            return;
         }
         let q = dividend as i128 / (divisor as i128 * 2);
         if q < i32::MIN as i128 || q > i32::MAX as i128 {
             self.psw.overflow = true;
-            return true;
+            return;
         }
         self.set_r(r1, q as i32 as u32);
-        false
     }
 
     /// Shift execution (§6). The count field selects an immediate count

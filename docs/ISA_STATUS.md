@@ -129,23 +129,60 @@ NCT normalizes until bit0 ≠ bit1 with the §6.1 zero/carry rules.
 | Zero Register Bits | ZRB | RI | VERIFIED | §7.19 |
 | Zero Halfword | ZH | SRS, RS | VERIFIED | CC **not** changed (§7.20) |
 
-## Floating point (§8) — NOT IMPLEMENTED (encodings verified)
+## Floating point (§8) — implemented (phase 2)
 
-The format is documented and VERIFIED (IBM hexadecimal float, sign +
-7-bit excess-64 characteristic + hex fraction; short = 24-bit fraction,
-long = 56-bit in a register pair; CC rules per §8.7). Execution is out of
-phase-1 scope; all encodings below decode and trap with their mnemonic:
+IBM hexadecimal float: sign + 7-bit excess-64 characteristic + hex
+fraction; short = 6 digits in a fullword, long = 14 digits in a register
+pair (§8.1-8.5). Implemented with prealignment + guard digit, forced
+true zeros, postnormalization, and the §8.8 exception rules (exponent
+overflow → PE 000B with operands unchanged; underflow → PE 0009 when
+masked on, true zero when off; significance → true zero always, PE 0005
+when masked on; divide by zero fraction → suppressed, PE 000C). CC per
+§8.7 (set by add/subtract/compare/convert/load/MVS, not by
+multiply/divide/store; loads judge the fraction only and don't
+normalize).
 
-AER/AE/AEDR/AED (add), SER/SE/SEDR/SED (subtract), CER/CE/CEDR/CED
-(compare), MER/ME/MEDR/MED (multiply), DER/DE/DEDR/DED (divide),
-LER/LE/LED/LECR (load), STE/STED (store), CVFX/CVFL (convert),
-MVS (midvalue select), LFLI/LFLR/LFXR (register moves/immediates).
+| Instr | Mnemonics | Status | Notes |
+|---|---|---|---|
+| Add / Subtract (short, long) | AER/AE, AEDR/AED, SER/SE, SEDR/SED | VERIFIED | §8.9/8.10/8.26/8.27 |
+| Compare (short, long) | CER/CE, CEDR/CED | PARTIAL | correct algebraic compare implemented; the §8.11 ANOMALY (hardware returns false equality when prealigned fractions differ by exactly X'80 0000') is **not replicated** |
+| Multiply (short, long) | MER/ME, MEDR/MED | PARTIAL | even-R1 short multiply fills the register pair (§8.25). Exact fraction product used; the hardware's partial-sum truncation for long multiply (three most significant fullword partial products, §8.24) may differ in the lowest-order bits |
+| Divide (short, long) | DER/DE, DEDR/DED | PARTIAL | truncated quotient per §8.15/8.16; the §8.15 ANOMALY (long-divide accuracy limited to 29 fraction bits "under certain conditions") is not replicated — the manual says the conditions cannot be characterized |
+| Load / Load Complement | LER/LE, LED, LECR | VERIFIED | no normalization; CC from fraction; LECR loads true zero for zero fractions (§8.17-8.19) |
+| Store | STE, STED | VERIFIED | CC unchanged (§8.28/8.29) |
+| Convert | CVFX, CVFL | VERIFIED | fixed point has the binary point between bits 15/16; CVFX CC on result bits 0-15; convert overflow → PE 000A (§8.13/8.14) |
+| Midvalue Select | MVS | VERIFIED | limiter semantics and CC per §8.23; output normalized (may underflow) |
+| Immediates / moves | LFLI, LFLR, LFXR | VERIFIED | LFLI table §8.21 |
 
-## Special, status-switching, and I/O operations (§3, §9, §10) — NOT IMPLEMENTED (encodings verified)
+## Interrupts and status switching (§2.5.2, §9) — implemented (phase 2)
 
-DIAG, ISPB, LPS, MVH, SPM, SSM, SCAL, SRET, SVC, TS, TSB, LXA/LXAR,
-LDM, STXA/STXAR, STDM, ICR, PC. These require the interrupt/storage-
-protection/DSE/IOP machinery of later phases. All decode and trap.
+PSW swaps through the preferred storage area (Figure 2-20/2-21):
+program-exception class old/new at 0048/004C with codes 0000 illegal,
+0001 privileged, 0004 fixed-point overflow (ENDOP check of PSW bits
+19+20, incl. after SPM/LPS), 0005 significance, 0009 FP underflow,
+000A convert overflow, 000B FP overflow, 000C FP divide; SVC at
+0058/005C with the 16-bit EA as code and the sector extension in old-PSW
+bits 40-43. Register-set switching via new-PSW bit 44 works. Emulator
+convention (documented): an interrupt whose new-PSW doubleword is all
+zero halts with a typed `UninitializedInterrupt` trap instead of
+executing from a zero PSW. Machine-check, system/external, and timer
+interrupts await the I/O phases; program interrupts leave the IC per
+Figure 2-20's "PSW can vary" note (illegal: at the instruction;
+others: past it).
+
+| Instr | Status | Notes |
+|---|---|---|
+| LPS | VERIFIED | privileged; loads both PSW words; CC/indicators from new PSW (§9.3) |
+| SPM | VERIFIED | R2 bits 16-23 → CC/carry/overflow/masks (§9.5) |
+| SSM | VERIFIED | privileged; halfword → PSW bits 32-47 incl. wait/problem/register-set (§9.6) |
+| SVC | VERIFIED | §9.9 |
+| TS | VERIFIED | three-state CC then set all ones; atomic (trivially — no concurrent bus masters yet) (§9.10) |
+
+## Remaining special operations — NOT IMPLEMENTED (encodings verified)
+
+DIAG, ISPB, MVH, SCAL, SRET, TSB, LXA/LXAR, LDM, STXA/STXAR, STDM,
+ICR, PC. These need storage protection, the stack convention, DSE
+loading, or the IOP. All decode and trap with their mnemonic.
 
 ## Addressing-mode gap (PARTIAL, applies to all RS-indexed forms)
 
@@ -157,11 +194,11 @@ other §11.1 modes (SRS, RS extended, indexed, IC-relative ±, halfword
 indirect, postindexed indirect, automatic index modification) are
 implemented and tested.
 
-## Interrupts, protection, timing — NOT IMPLEMENTED
+## Interrupts (other classes), protection, timing — NOT IMPLEMENTED
 
-- The interrupt system (§2.5.2) is not modeled. The one interrupt whose
-  trigger arises in phase-1 code — fixed-point overflow with PSW bit 20
-  set — halts the emulator with a typed trap instead of PSW-swapping.
+- Program-exception and SVC interrupts are modeled (above). Machine
+  check, system/external, and interval-timer interrupts are not (I/O
+  phases).
 - Storage protection and the instruction monitor (§2.4) are not modeled.
 - Timing (§16-§17) is not modeled; this is an instruction-level emulator.
 

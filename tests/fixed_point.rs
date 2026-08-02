@@ -547,23 +547,28 @@ fn td_tally_down() {
 #[test]
 fn fixed_point_overflow_interrupt_when_unmasked() {
     use lazarus_ap::Trap;
+    // With PSW bit 20 = 1 the ENDOP overflow check fires a program
+    // interrupt (code 0004). With no handler PSW installed the emulator
+    // halts with UninitializedInterrupt (tests/interrupt.rs covers the
+    // real PSW swap).
     let mut c = cpu8k();
-    c.psw.fixed_overflow_mask = true; // PSW bit 20 = 1: interrupt allowed
+    c.psw.fixed_overflow_mask = true;
     c.set_r(1, 0x7FFF_FFFF);
     c.set_r(2, 1);
     let t = exec1_err(&mut c, &[0b00000_001_11100_010]);
-    assert!(matches!(t, Trap::FixedPointOverflow { .. }));
+    assert!(matches!(t, Trap::UninitializedInterrupt { code: 0x0004, .. }));
     assert!(c.psw.overflow);
 }
 
 #[test]
 fn unimplemented_and_illegal_trap() {
     use lazarus_ap::Trap;
-    // AER (floating point) decodes but traps as unimplemented.
+    // MVH (special op) decodes but traps as unimplemented.
     let mut c = cpu8k();
-    let t = exec1_err(&mut c, &[0b01010_001_11100_010]);
-    assert!(matches!(t, Trap::Unimplemented { mnemonic: "AER", .. }));
-    // ST has no RR form: illegal.
+    let t = exec1_err(&mut c, &[0b01101_001_11101_010]);
+    assert!(matches!(t, Trap::Unimplemented { mnemonic: "MVH", .. }));
+    // ST has no RR form: illegal instruction. With no program-exception
+    // handler installed, the emulator falls back to the typed trap.
     let mut c = cpu8k();
     let t = exec1_err(&mut c, &[0b00110_001_11100_010]);
     assert!(matches!(t, Trap::IllegalInstruction { .. }));
