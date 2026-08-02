@@ -20,6 +20,7 @@ pub mod deu;
 pub mod fcm;
 pub mod float;
 pub mod gpc;
+pub mod halucp;
 pub mod iop;
 pub mod mem;
 pub mod psw;
