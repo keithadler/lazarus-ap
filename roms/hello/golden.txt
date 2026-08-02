@@ -1,0 +1,27 @@
+THE BEGINNING
+          1     HELLO, WORLD!
+                    2     RON BURKEY SAYS ISN'T THIS FUN?
+                    4     RON BURKEY SAYS ISN'T THIS FUN?
+                    6     RON BURKEY SAYS ISN'T THIS FUN?
+                    8     RON BURKEY SAYS ISN'T THIS FUN?
+          2     HELLO, WORLD!
+                    2     RON BURKEY SAYS ISN'T THIS FUN?
+                    4     RON BURKEY SAYS ISN'T THIS FUN?
+                    6     RON BURKEY SAYS ISN'T THIS FUN?
+                    8     RON BURKEY SAYS ISN'T THIS FUN?
+          3     HELLO, WORLD!
+                    2     RON BURKEY SAYS ISN'T THIS FUN?
+                    4     RON BURKEY SAYS ISN'T THIS FUN?
+                    6     RON BURKEY SAYS ISN'T THIS FUN?
+                    8     RON BURKEY SAYS ISN'T THIS FUN?
+          4     HELLO, WORLD!
+                    2     RON BURKEY SAYS ISN'T THIS FUN?
+                    4     RON BURKEY SAYS ISN'T THIS FUN?
+                    6     RON BURKEY SAYS ISN'T THIS FUN?
+                    8     RON BURKEY SAYS ISN'T THIS FUN?
+          5     HELLO, WORLD!
+                    2     RON BURKEY SAYS ISN'T THIS FUN?
+                    4     RON BURKEY SAYS ISN'T THIS FUN?
+                    6     RON BURKEY SAYS ISN'T THIS FUN?
+                    8     RON BURKEY SAYS ISN'T THIS FUN?
+THE END

@@ -33,3 +33,26 @@ fn real_halsfc_hello_world_runs() {
     assert_eq!(ucp.output.matches("HELLO, WORLD!").count(), 5);
     assert_eq!(ucp.output.matches("ISN'T THIS FUN?").count(), 20);
 }
+
+/// Parity against yaGPC2's actual output (goldens captured from a
+/// locally-built yaGPC2 running the same fixtures). Two known gaps,
+/// tracked in docs/ROADMAP.md:
+/// 1. emit_field column/pagination layout is not yet ported (our output
+///    joins fields with single spaces);
+/// 2. 176-P's ACCEL component 0 (golden 9.9999964E-02) comes out as a
+///    characteristic-zero garbage value — components 1 and 2 match the
+///    golden EXACTLY, so this is an arithmetic bug in one of our §8
+///    float operations, not an output bug. Hunt: watch stores to the
+///    ACCEL vector and diff the computation against yaGPC2.
+#[test]
+#[ignore = "known gaps: column parity + one float-op bug (see doc comment)"]
+fn golden_parity() {
+    let bytes = std::fs::read("roms/p176/176-P.fcm").unwrap();
+    let json = std::fs::read_to_string("roms/p176/176-P-lnk101.json").unwrap();
+    let golden = std::fs::read_to_string("roms/p176/golden.txt").unwrap();
+    let mut cpu = Cpu::new(Memory::full());
+    fcm::boot(&mut cpu, &bytes, Some(&json)).unwrap();
+    let mut ucp = HalUcp::from_symbols_json(&json).unwrap();
+    run_hal(&mut cpu, &mut ucp, 3_000_000);
+    assert_eq!(ucp.output, golden);
+}
