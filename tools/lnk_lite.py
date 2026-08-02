@@ -24,6 +24,10 @@ recovered from the hello fixture's linked bytes:
               BSV = target's sector in bits 8-11, DSV = 0.
 
 Usage: lnk_lite.py PROG.obj BASE.fcm BASE.json -o OUT.fcm
+       lnk_lite.py PROG.obj --standalone [--org N] -o OUT.fcm
+         (no base: CSECTs placed sequentially from --org, default
+          0x100; emits OUT.fcm plus a minimal OUT-lnk101.json with the
+          entry point; externals are errors)
 """
 
 import json
@@ -91,7 +95,10 @@ def sector16(addr_hw):
 
 
 def main():
-    args = [a for a in sys.argv[1:] if a != "-o"]
+    argv = sys.argv[1:]
+    if "--standalone" in argv:
+        return standalone(argv)
+    args = [a for a in argv if a != "-o"]
     obj_path, base_fcm, base_json, out_fcm = args
     modules = parse_deck(obj_path)
     base = bytearray(open(base_fcm, "rb").read())
@@ -155,6 +162,67 @@ def main():
     open(out_fcm, "wb").write(base)
     print(f"linked {obj_path} over {base_fcm} -> {out_fcm} "
           f"(entry {symtab['entryPoint']}, symbols unchanged)")
+
+
+
+
+def standalone(argv):
+    org = 0x100
+    if "--org" in argv:
+        org = int(argv[argv.index("--org") + 1], 0)
+        del argv[argv.index("--org"):argv.index("--org") + 2]
+    argv = [a for a in argv if a not in ("--standalone", "-o")]
+    obj_path, out_fcm = argv
+    modules = parse_deck(obj_path)
+    # place SDs sequentially (fullword-aligned), across all modules
+    addr = org
+    placement = []  # per-module dict esdid->addr
+    top = org
+    for mod in modules:
+        addr_of = {}
+        for i, esd in enumerate(mod["esds"], start=1):
+            if esd["kind"] == "SD":
+                addr_of[i] = addr
+                length_hw = max(
+                    (t["addr"] + t["size"] + 1) // 2
+                    for t in mod["txt"]
+                    if t["esdid"] == i
+                ) if any(t["esdid"] == i for t in mod["txt"]) else 0
+                addr += (length_hw + 1) & ~1
+                top = max(top, addr)
+        placement.append(addr_of)
+    # resolve ERs against SD names across modules
+    names = {}
+    for mod, addr_of in zip(modules, placement):
+        for i, esd in enumerate(mod["esds"], start=1):
+            if esd["kind"] == "SD":
+                names[esd["name"]] = addr_of[i]
+    image = bytearray(top * 2)
+    for mod, addr_of in zip(modules, placement):
+        for i, esd in enumerate(mod["esds"], start=1):
+            if esd["kind"] == "ER":
+                if esd["name"] not in names:
+                    sys.exit(f"unresolved external {esd['name']}")
+                addr_of[i] = names[esd["name"]]
+        for t in mod["txt"]:
+            b = addr_of[t["esdid"]] * 2
+            image[b + t["addr"]:b + t["addr"] + t["size"]] = t["data"]
+        for r in mod["rld"]:
+            target = addr_of[r["rel"]]
+            spot = addr_of[r["pos"]] * 2 + r["addr"]
+            if r["flags"] in (0x00, 0x10):
+                val = sector16(target)
+            elif r["flags"] == 0x40:
+                val = 0x0700 | ((target >> 15) << 4)
+            else:
+                sys.exit(f"unknown RLD flags {r['flags']:02X}")
+            old = be(image[spot:spot + 2])
+            image[spot:spot + 2] = (old + val & 0xFFFF).to_bytes(2, "big")
+    open(out_fcm, "wb").write(image)
+    jpath = out_fcm.rsplit(".", 1)[0] + "-lnk101.json"
+    json.dump({"entryPoint": org, "sections": [], "symbols": [],
+               "repro": {"tool": "lnk_lite --standalone"}}, open(jpath, "w"))
+    print(f"standalone: {obj_path} -> {out_fcm} (org {org:#x}, top {top:#x})")
 
 
 if __name__ == "__main__":

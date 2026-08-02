@@ -109,3 +109,24 @@ fn our_own_hal_s_program_runs() {
     assert!(ucp.output.ends_with("SET IS GO\n"));
     assert_eq!(ucp.output.matches("GPC VOTE              42").count(), 3);
 }
+
+/// The assembly path: LAZASM.asm was assembled by the genuine ASM101S
+/// assembler and linked standalone by tools/lnk_lite.py. It computes a
+/// value, copies a witness pattern, and exits via the SVC convention.
+#[test]
+fn asm101s_assembled_program_runs() {
+    let bytes = std::fs::read("roms/lazasm/LAZASM.fcm").unwrap();
+    let json = std::fs::read_to_string("roms/lazasm/LAZASM-lnk101.json").unwrap();
+    let mut cpu = Cpu::new(Memory::full());
+    fcm::boot(&mut cpu, &bytes, Some(&json)).unwrap();
+    let mut ucp = HalUcp::new(u32::MAX >> 1, 0, 0, 0); // no runtime I/O
+    let r = run_hal(&mut cpu, &mut ucp, 10_000);
+    println!("r={r:?} ic={:04X}", cpu.psw.ic);
+    // CSECT at 0x100: DONE +0xB, ANSWER +0xC, WITNESS +0xD (ASM101S
+    // symbol table).
+    println!("answer={:04X} witness={:04X}",
+        cpu.mem.read_h(0x10C).unwrap(), cpu.mem.read_h(0x10D).unwrap());
+    assert_eq!(r, HalRun::Done, "ends via SVC 0x15 pointer");
+    assert_eq!(cpu.mem.read_h(0x10C).unwrap(), 42, "computed 7+35");
+    assert_eq!(cpu.mem.read_h(0x10D).unwrap(), 0x5A5A, "witness copied");
+}
