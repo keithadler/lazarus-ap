@@ -116,6 +116,10 @@ impl BusSubsystem for Deu {
         self
     }
 
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+
     fn observe(&mut self, bus: usize, w: BusWord) -> Vec<BusWord> {
         if bus != self.bus {
             return Vec::new();

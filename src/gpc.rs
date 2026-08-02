@@ -71,6 +71,7 @@ pub trait BusSubsystem {
     fn bus(&self) -> usize;
     /// Downcast access for tests and front ends.
     fn as_any(&self) -> &dyn std::any::Any;
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
 }
 
 /// A hydraulic-style force-voted actuator port set: one command port per

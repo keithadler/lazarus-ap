@@ -30,9 +30,17 @@ paints "OPS 201" onto the CRT, both via BCE programs over a display
 bus; a BFS-style listener GPC on the same bus overhears every
 keystroke — how the real BFS tracked crew inputs to PASS.
 
+## Front end
+
+`cargo run --bin lazap-dps` opens the interactive crew station: your
+keystrokes queue in the DEU, the GPC's #MIN poll loop pulls them over
+the display bus into main storage (the "GPC HEARD" line reads GPC
+memory, not the DEU), and the CRT header was painted by the GPC's
+#MOUT. `--demo` types "OPS 2 0 1 PRO" itself for a non-interactive
+smoke test.
+
 ## Staged
 
 - DEU format overlays / decoms (needs the DPS Dictionary formats).
-- A terminal front end (type at the emulated keyboard, watch the CRT).
 - CPU-side keyboard-echo software driven by IOP interrupts rather than
-  test orchestration.
+  host pumping (needs LOAD LOCAL STORE so the CPU can task the MSC).

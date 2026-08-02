@@ -64,6 +64,17 @@ cargo test
 `cargo test` runs the whole suite (143 tests: unit, per-instruction,
 addressing-mode, and golden-trace) and reports pass/fail per test.
 
+## The crew station
+
+```
+cargo run --bin lazap-dps
+```
+
+Type at the emulated DPS keyboard (o=OPS, p=PRO, digits...) and watch
+the CRT plus what the GPC hears over the display bus. `--demo` runs a
+scripted "OPS 2 0 1 PRO" and exits. The stack under it is the real
+emulation: DEU -> serial display bus -> BCE #MIN/#MOUT -> main storage.
+
 ## Run a program
 
 ```
