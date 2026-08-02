@@ -16,6 +16,7 @@
 pub mod asm;
 pub mod cpu;
 pub mod decode;
+pub mod demo;
 pub mod deu;
 pub mod fcm;
 pub mod float;
