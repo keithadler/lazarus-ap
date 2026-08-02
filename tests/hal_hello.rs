@@ -59,6 +59,12 @@ fn golden_parity() {
             "roms/p176/176-P-lnk101.json",
             "roms/p176/golden.txt",
         ),
+        // EOF mid-READ caught by an ON ERROR handler (SCAL-frame unwind)
+        (
+            "roms/read_eof/read_eof_onerror.fcm",
+            "roms/read_eof/read_eof_onerror-lnk101.json",
+            "roms/read_eof/golden.txt",
+        ),
     ] {
         let bytes = std::fs::read(fcm_path).unwrap();
         let json = std::fs::read_to_string(json_path).unwrap();

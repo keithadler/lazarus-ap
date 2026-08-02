@@ -308,10 +308,20 @@ impl HalUcp {
                 self.read_terminated = true;
                 self.skip_trap = true;
             }
-            Some(Field::Null) | None => {
-                // null field leaves the target unchanged; EOF likewise
-                // (the EOF error path is ON ERROR territory, unported)
+            Some(Field::Null) => {
+                // null field: target unchanged
                 self.skip_trap = true;
+            }
+            None => {
+                // EOF on input: error group 10, number 5 — dispatched to
+                // an ON ERROR handler if one is installed, else the
+                // program halts (yaGPC2 halucp_provide_eof).
+                if self.try_on_error_dispatch(cpu, 10, 5) {
+                    self.skip_trap = true;
+                } else {
+                    self.flush();
+                    cpu.psw.wait = true;
+                }
             }
             Some(Field::Value(text)) => {
                 match iocode {
@@ -359,6 +369,73 @@ impl HalUcp {
                 self.skip_trap = true;
             }
         }
+    }
+
+    /// ON ERROR dispatch (yaGPC2 try_on_error_dispatch): scan the
+    /// call-frame chain's FIXV/handler slot pairs (direct case, slots at
+    /// frame+18, walking caller frames via the saved R0), then the
+    /// SCAL-frame-unwind case (slots at the caller's stack end, full
+    /// R0-R7 + PSW word 0 restore). The IGNORE-AND-event tag values and
+    /// the group-4/num-27 never-dispatch quirk are honored.
+    fn try_on_error_dispatch(&mut self, cpu: &mut Cpu, group: u16, num: u16) -> bool {
+        if group == 4 && num == 27 {
+            return false;
+        }
+        let rd = |cpu: &Cpu, a: u32| cpu.mem.read_h(a & 0xFFFF).unwrap_or(0);
+        // direct case, walking up
+        let mut walk_sa = cpu.r(0) >> 16;
+        let mut walk_r0 = cpu.r(0);
+        for level in 0..8 {
+            for slot in 0..16u32 {
+                let off = 18 + slot * 2;
+                let fixv = rd(cpu, walk_sa + off);
+                if matches!(fixv >> 12, 0xF | 0x7 | 0xB) {
+                    continue; // IGNORE-AND-event dispositions: no jump
+                }
+                if !match_error_handler(fixv, group, num) {
+                    continue;
+                }
+                // Replicate the AEXIT epilogue the jump bypasses: restore
+                // the caller's data-base registers from the matched frame.
+                if level > 0 {
+                    cpu.set_r(0, walk_r0);
+                }
+                let r1 = (rd(cpu, walk_sa + 5) as u32) << 16;
+                let r3 = (rd(cpu, walk_sa + 9) as u32) << 16;
+                cpu.set_r(1, r1);
+                cpu.set_r(3, r3);
+                cpu.psw.ic = rd(cpu, walk_sa + off + 1);
+                return true;
+            }
+            let hi = rd(cpu, walk_sa + 2) as u32;
+            let lo = rd(cpu, walk_sa + 3) as u32;
+            if hi == 0 || hi == walk_sa {
+                break;
+            }
+            let _ = level;
+            walk_r0 = (hi << 16) | lo;
+            walk_sa = hi;
+        }
+        // SCAL-frame-unwind case: the erroring RTL routine was SCAL-
+        // called; recover the caller's R0 from the frame's save slots.
+        let sa = cpu.r(0) >> 16;
+        let hi = rd(cpu, sa + 2) as u32;
+        let lo = rd(cpu, sa + 3) as u32;
+        let stack_end = (hi + lo) & 0xFFFF;
+        let fixv = rd(cpu, stack_end.wrapping_sub(2));
+        let handler = rd(cpu, stack_end.wrapping_sub(1));
+        if !match_error_handler(fixv, group, num) {
+            return false;
+        }
+        let w0 = ((rd(cpu, sa) as u32) << 16) | rd(cpu, sa + 1) as u32;
+        for i in 0..8u8 {
+            let rh = rd(cpu, sa + 2 + i as u32 * 2) as u32;
+            let rl = rd(cpu, sa + 2 + i as u32 * 2 + 1) as u32;
+            cpu.set_r(i, (rh << 16) | rl);
+        }
+        cpu.psw.set_word0(w0);
+        cpu.psw.ic = handler;
+        true
     }
 
     fn handle_output(&mut self, cpu: &Cpu) {
@@ -526,6 +603,24 @@ impl HalUcp {
             _ => {}
         }
     }
+}
+
+/// FIXV matching (yaGPC2 match_error_handler): 0 = empty, 63 = bare
+/// catch-all, TAG=0 user DO-blocks with 6-bit group/number fields
+/// (0x3F wildcards).
+fn match_error_handler(fixv: u16, group: u16, num: u16) -> bool {
+    if fixv == 0 {
+        return false;
+    }
+    if fixv == 63 {
+        return true;
+    }
+    if (fixv >> 12) & 0xF != 0 {
+        return false;
+    }
+    let num_field = (fixv >> 6) & 0x3F;
+    let grp_field = fixv & 0x3F;
+    (grp_field == 0x3F || grp_field == group) && (num_field == 0x3F || num_field == num)
 }
 
 enum Field {
