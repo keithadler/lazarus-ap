@@ -279,6 +279,28 @@ h2.sect{font-size:22px;font-weight:400;margin:0 0 14px}
       an emulator like this one is now, as far as we know, the only place these
       instructions still run.</p></div>
   </div>
+  <h2 class="sect" id="lab">The flight math lab</h2>
+  <p style="max-width:70ch;margin:0 0 14px">The Shuttle&rsquo;s runtime library
+  survives as original AP-101S assembly &mdash; <b>205 routines</b>, of which 202
+  assemble today with the genuine flight assembler. These are the ones brought back
+  to life so far: each was assembled, linked, and executed on this emulator, and its
+  answer compared against the same function on a modern machine. The
+  &ldquo;calls&rdquo; column matters &mdash; when SINH runs, the exponential
+  underneath it is the Shuttle&rsquo;s own EXP; ASINH reaches down through its LOG
+  and its SQRT. The library is running as a library.</p>
+  <div class="panel" style="overflow-x:auto;margin-bottom:12px">
+    <table class="rt" style="min-width:620px">
+      <tr><td style="font-weight:700">Routine</td><td style="font-weight:700">Calls</td>
+      <td style="font-weight:700">Input</td><td style="font-weight:700">Flight answer</td>
+      <td style="font-weight:700">Modern</td><td style="font-weight:700">Match</td></tr>
+      <tr><td class="mono" style="font-weight:700">SQRT</td><td class="mono" style="color:var(--dim)">&mdash;</td><td class="mono">2</td><td class="mono">0x4116A09E = 1.4142132</td><td class="mono" style="color:var(--dim)">1.4142136</td><td style="color:var(--accent);font-weight:700">exact</td></tr><tr><td class="mono" style="font-weight:700">EXP</td><td class="mono" style="color:var(--dim)">&mdash;</td><td class="mono">1</td><td class="mono">0x412B7E15 = 2.7182817</td><td class="mono" style="color:var(--dim)">2.7182818</td><td style="color:var(--accent);font-weight:700">exact</td></tr><tr><td class="mono" style="font-weight:700">LOG</td><td class="mono" style="color:var(--dim)">&mdash;</td><td class="mono">2</td><td class="mono">0x40B17219 = 0.6931472</td><td class="mono" style="color:var(--dim)">0.6931472</td><td style="color:var(--accent);font-weight:700">exact</td></tr><tr><td class="mono" style="font-weight:700">TAN</td><td class="mono" style="color:var(--dim)">&mdash;</td><td class="mono">0.5</td><td class="mono">0x408BDA7A = 0.5463024</td><td class="mono" style="color:var(--dim)">0.5463025</td><td style="color:var(--accent);font-weight:700">exact</td></tr><tr><td class="mono" style="font-weight:700">SINH</td><td class="mono" style="color:var(--dim)">EXP</td><td class="mono">1</td><td class="mono">0x4112CDA0 = 1.1752014</td><td class="mono" style="color:var(--dim)">1.1752012</td><td style="color:var(--accent);font-weight:700">exact</td></tr><tr><td class="mono" style="font-weight:700">TANH</td><td class="mono" style="color:var(--dim)">EXP</td><td class="mono">1</td><td class="mono">0x40C2F7D6 = 0.7615942</td><td class="mono" style="color:var(--dim)">0.7615942</td><td style="color:var(--accent);font-weight:700">exact</td></tr><tr><td class="mono" style="font-weight:700">COSH</td><td class="mono" style="color:var(--dim)">EXP</td><td class="mono">1</td><td class="mono">0x4118B075 = 1.5430803</td><td class="mono" style="color:var(--dim)">1.5430806</td><td style="color:var(--accent);font-weight:700">exact</td></tr><tr><td class="mono" style="font-weight:700">ACOS</td><td class="mono" style="color:var(--dim)">SQRT</td><td class="mono">0.5</td><td class="mono">0x4110C152 = 1.0471973</td><td class="mono" style="color:var(--dim)">1.0471976</td><td style="color:var(--accent);font-weight:700">exact</td></tr><tr><td class="mono" style="font-weight:700">ASINH</td><td class="mono" style="color:var(--dim)">SQRT&rarr;LOG</td><td class="mono">1</td><td class="mono">0x40E1A1B1 = 0.8813735</td><td class="mono" style="color:var(--dim)">0.8813736</td><td style="color:var(--accent);font-weight:700">exact</td></tr><tr><td class="mono" style="font-weight:700">ATANH</td><td class="mono" style="color:var(--dim)">LOG</td><td class="mono">0.5</td><td class="mono">0x408C9F50 = 0.5493059</td><td class="mono" style="color:var(--dim)">0.5493061</td><td style="color:var(--accent);font-weight:700">exact</td></tr><tr><td class="mono" style="font-weight:700">ACOSH</td><td class="mono" style="color:var(--dim)">SQRT&rarr;LOG</td><td class="mono">2</td><td class="mono">0x41151242 = 1.3169575</td><td class="mono" style="color:var(--dim)">1.3169579</td><td style="color:var(--accent);font-weight:700">exact</td></tr></table>
+  </div>
+  <p class="hint" style="margin-bottom:40px">Differences appear in the seventh
+  decimal place &mdash; the limit of the machine&rsquo;s 24-bit hexadecimal
+  fractions, not an error. Reproduce any row with
+  <span class="mono">tools/resurrect.py SQRT:2.0</span>, which finds the routine&rsquo;s
+  dependencies, writes a driver, assembles it with ASM101S, links it, runs it, and
+  checks the answer.</p>
   <h2 class="sect" id="crew">The crew station &mdash; keyboard and CRT</h2>
   <p style="max-width:70ch;margin:0 0 14px">This is how astronauts talked to the
   computers. There was no keyboard <i>on</i> a GPC &mdash; the crew typed on
