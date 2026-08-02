@@ -275,6 +275,15 @@ fn nasa_flight_vector_math() {
     // dot product [1,2,3]·[4,5,6] = 32
     let cpu = run("roms/nasa/VV6RUN.fcm");
     assert!((f(&cpu, 0x11E) - 32.0).abs() < 1e-5, "dot product");
+    // 3x3 matrix multiply: [[1,2,3],[4,5,6],[7,8,9]] x 2I
+    let cpu = run("roms/nasa/MM6RUN.fcm");
+    let got: Vec<f64> = (0..9).map(|i| f(&cpu, 0x138 + 2 * i)).collect();
+    let want: Vec<f64> = (1..=9).map(|k| 2.0 * k as f64).collect();
+    assert_eq!(
+        got.iter().map(|v| v.round() as i32).collect::<Vec<_>>(),
+        want.iter().map(|v| *v as i32).collect::<Vec<_>>(),
+        "matrix multiply"
+    );
     // unit vector of [3,4,0] = [0.6, 0.8, 0]
     let cpu = run("roms/nasa/VV10RUN.fcm");
     assert!((f(&cpu, 0x116) - 0.6).abs() < 1e-5, "unit x");

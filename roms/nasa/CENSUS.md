@@ -135,3 +135,9 @@ Vector elements sit at displacements 2/4/6 off the pointer, so the
 pointer again addresses one fullword before element 1 - the same
 pre-increment convention the array routines use. VV10S3 normalizes by
 calling the flight SQRT: pointing math, all the way down.
+| MM6S3 | 3x3 MATRIX MULTIPLY | R2, R3 = matrix ptrs, R1 = result ptr | [[1,2,3],[4,5,6],[7,8,9]] x 2I | [2,4,6,8,10,12,14,16,18] |
+
+Matrices are stored row-major as nine consecutive fullwords, same
+one-fullword-before pointer convention. MM6S3 is the transform at the
+heart of attitude work: every rotation the orbiter computed passed
+through a routine shaped like this one.
