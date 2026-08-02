@@ -48,7 +48,15 @@ pub fn entry_point(symbols_json: &str) -> Option<u32> {
 pub fn boot(cpu: &mut Cpu, fcm: &[u8], symbols_json: Option<&str>) -> Result<(), AddressError> {
     load_fcm(&mut cpu.mem, fcm)?;
     let entry = symbols_json.and_then(entry_point).unwrap_or(0);
-    cpu.psw.ic = entry as u16;
+    // 19-bit entry points: the IC is 16 bits; addresses past 32K
+    // halfwords set the high bit and route through the BSR sector
+    // register (§2.2.9 expanded addressing).
+    if entry >= 0x8000 {
+        cpu.psw.bsr = (entry >> 15) as u8 & 0xF;
+        cpu.psw.ic = 0x8000 | (entry & 0x7FFF) as u16;
+    } else {
+        cpu.psw.ic = entry as u16;
+    }
     cpu.psw.wait = false;
     Ok(())
 }

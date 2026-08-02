@@ -343,9 +343,49 @@ impl Cpu {
                         return Ok(Ea::Mem { ea16, addr });
                     }
                     // Fullword indirect address pointer with postindexing
-                    // and BSV/DSV/PSW-modify control bits (X!=0, IA=1,
-                    // I=1): §2.2.8 step 10, Figure 2-17. Not implemented.
-                    _ => return Err(Trap::UnimplementedAddressing { at }),
+                    // (X!=0, IA=1, I=1): §2.2.8 step 10, Figure 2-17.
+                    // Pointer fullword: address in bits 1-15, Xc (index
+                    // suppress) bit 20, C bit 21 (with CB/CD bits 22/23
+                    // selecting PSW BSR/DSR replacement from the BSV/DSV
+                    // fields, bits 24-31). Semantics cross-checked
+                    // against yaGPC2's cpu_g_ea.
+                    (x, true, true) => {
+                        let ptr_addr = self.expand_data(pea, base_reg);
+                        let fw =
+                            self.mem.read_f(ptr_addr).map_err(|e| trap_addr(e, at))?;
+                        let addr15 = (fw >> 16) & 0x7FFF;
+                        let xc = (fw >> 11) & 1;
+                        let c = (fw >> 10) & 1;
+                        let cb = (fw >> 9) & 1;
+                        let cd = (fw >> 8) & 1;
+                        let bsv = (fw >> 4) as u8 & 0xF;
+                        let dsv = fw as u8 & 0xF;
+                        if c == 1 {
+                            if cd == 1 {
+                                self.psw.dsr = dsv;
+                            }
+                            if cb == 1 {
+                                self.psw.bsr = bsv;
+                            }
+                        }
+                        let eff_dsr = if c == 0 { dsv } else { self.psw.dsr };
+                        let off = if xc == 0 {
+                            (addr15 + self.aligned_index(x, instr) as u32) & 0x7FFF
+                        } else {
+                            addr15
+                        };
+                        let sector =
+                            (if branch { self.psw.bsr } else { eff_dsr }) as u32;
+                        // Branch consumers store ea16 into the IC and
+                        // re-expand through the BSR: keep bit 15 set so
+                        // the sector survives the round trip.
+                        let ea16 =
+                            if branch { 0x8000 | off as u16 } else { off as u16 };
+                        return Ok(Ea::Mem { ea16, addr: (sector << 15) | off });
+                    }
+                    // remaining combinations are covered by the guarded
+                    // arms above
+                    _ => unreachable!("RS-indexed mode combinations exhausted"),
                 }
             }
         };

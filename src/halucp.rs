@@ -75,7 +75,11 @@ impl HalUcp {
                 format!("{v}")
             }
             13 => {
-                let len = cpu.mem.read_h(self.iobuf_addr).unwrap_or(0) as u32;
+                // Descriptor halfword: current length in the low byte
+                // (max length in the high byte); characters packed two
+                // per halfword. AP-101S DEU ASCII encoding: 0x00 = '"',
+                // 0x16 = '_' (yaGPC2 read_char_string).
+                let len = (cpu.mem.read_h(self.iobuf_addr).unwrap_or(0) & 0xFF) as u32;
                 let mut s = String::new();
                 for i in 0..len {
                     let hw = cpu
@@ -83,7 +87,12 @@ impl HalUcp {
                         .read_h(self.iobuf_addr + 1 + i / 2)
                         .unwrap_or(0);
                     let b = if i % 2 == 0 { (hw >> 8) as u8 } else { hw as u8 };
-                    s.push(b as char);
+                    s.push(match b {
+                        0x00 => '"',
+                        0x16 => '_',
+                        0x20..=0x7E => b as char,
+                        _ => '.',
+                    });
                 }
                 s
             }
@@ -96,11 +105,16 @@ impl HalUcp {
     }
 
     fn handle_control(&mut self, cpu: &Cpu) {
-        // Core subset: SKIP/newline-style control (yaGPC2 handle_control
-        // codes 0-6 manage channel/paging; a newline is the observable
-        // effect that matters for batch output).
-        let _ = cpu.mem.read_h(self.iocode_addr);
-        self.output.push('\n');
+        // Control codes (yaGPC2 handle_control): 0-3 channel/IOINIT
+        // setup, 4 = LINE advance, 5 = COLUMN, 6 = TAB. Core subset:
+        // LINE emits a newline; COLUMN/TAB emit a separator; setup is
+        // silent. (Column-accurate pagination is the parity work.)
+        let iocode = cpu.mem.read_h(self.iocode_addr).unwrap_or(0);
+        match iocode {
+            4 => self.output.push('\n'),
+            5 | 6 => self.output.push(' '),
+            _ => {}
+        }
     }
 }
 
