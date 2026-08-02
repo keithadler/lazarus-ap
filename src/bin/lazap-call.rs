@@ -10,6 +10,13 @@ fn main() {
     let a: Vec<String> = std::env::args().skip(1).collect();
     let file = a.iter().find(|s| !s.starts_with("--")).expect("image.fcm");
     let dp = a.iter().any(|s| s == "--dp");
+    // Result address (halfwords). Drivers vary in length, so the
+    // harness passes the symbol table's own value for RESULT.
+    let at = a
+        .windows(2)
+        .find(|w| w[0] == "--at")
+        .and_then(|w| u32::from_str_radix(w[1].trim_start_matches("0x"), 16).ok())
+        .unwrap_or(0x10E);
     let steps = a
         .windows(2)
         .find(|w| w[0] == "--steps")
@@ -20,9 +27,9 @@ fn main() {
     fcm::boot(&mut cpu, &bytes, Some(r#"{"entryPoint": 256}"#)).unwrap();
     let mut ucp = HalUcp::new(u32::MAX >> 1, 0, 0, 0);
     let r = run_hal(&mut cpu, &mut ucp, steps);
-    let hi = cpu.mem.read_f(0x10E).unwrap();
+    let hi = cpu.mem.read_f(at).unwrap();
     let u = if dp {
-        lazarus_ap::float::unpack_long(hi, cpu.mem.read_f(0x110).unwrap())
+        lazarus_ap::float::unpack_long(hi, cpu.mem.read_f(at + 2).unwrap())
     } else {
         lazarus_ap::float::unpack_short(hi)
     };

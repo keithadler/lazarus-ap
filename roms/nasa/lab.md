@@ -11,3 +11,12 @@
 | ASINH | SQRT&rarr;LOG | 1 | 0x40E1A1B1 = 0.8813735 | 0.8813736 | OK |
 | ATANH | LOG | 0.5 | 0x408C9F50 = 0.5493059 | 0.5493061 | OK |
 | ACOSH | SQRT&rarr;LOG | 2 | 0x41151242 = 1.3169575 | 1.3169579 | OK |
+| EATAN2 | &mdash; | 1, 2 | 0x4076B19C = 0.4636476 | 0.4636476 | OK |
+| EMOD | &mdash; | 7, 3 | 0x41100000 = 1.0000000 | 1.0000000 | OK |
+| EPWRE | EXP&rarr;SQRT&rarr;LOG | 2, 10 | 0x43400000 = 1024.0000000 | 1024.0000000 | OK |
+| DSQRT | &mdash; | 2 | &mdash; | &mdash; | FAILED: driver assembly failed |
+| DEXP | &mdash; | 1 | 0x412B7E15 = 2.7182817 | 2.7182818 | OK |
+| DLOG | &mdash; | 2 | &mdash; | &mdash; | FAILED: driver assembly failed |
+| DTAN | &mdash; | 0.5 | &mdash; | &mdash; | FAILED: driver assembly failed |
+| DSINH | DEXP | 1 | 0x4112CD9F = 1.1752005 | 1.1752012 | OK |
+| DACOS | DSQRT | 0.5 | 0x4110C152 = 1.0471973 | 1.0471976 | OK |
