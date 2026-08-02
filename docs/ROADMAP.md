@@ -89,7 +89,27 @@ spec. Remaining:
 - A terminal (later graphical) front end: type on the keyboard, watch
   the (test-software) displays, flip a GPC's mode switch.
 
-## Phase 7 — compile our own HAL/S (scouted, next)
+## Phase 7 — compile our own HAL/S — COMPILER RUNS
+
+Done this session: XCOM-I (pure Python) translated the release-32V0
+XPL source and clang built all seven passes (HALSFC-PASS1..PASS4, FLO,
+OPT, AUXP, in PASS.REL32V0 itself); the HALSFC driver then compiled a
+brand-new program — roms/lazarus/LAZARUS.hal, written for this
+project — successfully: roms/lazarus/LAZARUS.obj is a genuine IBM
+object deck (EBCDIC ESD/TXT/RLD cards, "$0LAZARU" entry, HAL/S-FC
+version stamp). Compile recipe:
+    export PATH="$PWD:$PWD/../../ported/PASS1.PROCS:<XCOM-I dir>:$PATH"
+    python3 HALSFC LAZARUS.hal -o LAZARUS.obj
+
+Remaining to close the loop — LINKING. `lnk101` exists nowhere public
+(only on the author's machine; confirmed by full-tree search). Path
+forward: write our own single-program linker against the object format
+(ASM101S/readObject101S.py is the working format spec; objectWriter.py
+the writer; the four fixture FCM+symbol-JSON pairs are layout ground
+truth, including how the runtime library modules — IOINIT etc., from
+RUNMAC — get placed). Open question: where lnk101 sources its RTL
+objects (the fixture symbol JSONs' "modules" arrays list what it
+linked in).
 
 The recovered Shuttle-era HAL/S-FC compiler source (release 32V0, XPL +
 BAL, Ron Burkey's ASCII restoration) lives in the Virtual AGC tree at
