@@ -1,0 +1,42 @@
+cff-version: 1.2.0
+title: "Lazarus AP: an emulator of the IBM AP-101S Space Shuttle flight computer"
+message: >-
+  If you use this work, please cite it, and please also cite the
+  recovered artifacts it stands on (see references below).
+type: software
+abstract: >-
+  A cited, test-driven emulation of the IBM AP-101S general-purpose
+  computer that flew every Space Shuttle mission, together with the
+  recovered flight toolchain. Runs the genuine HAL/S flight runtime
+  library and programs built by the original Space Shuttle compiler.
+  Instruction-set details unsupported by primary sources are marked
+  UNVERIFIED and left unimplemented rather than reconstructed.
+keywords:
+  - Space Shuttle
+  - AP-101S
+  - emulator
+  - HAL/S
+  - history of computing
+  - retrocomputing
+license: MIT
+repository-code: "https://github.com/USER/lazarus-ap"
+references:
+  - type: report
+    title: >-
+      Space Shuttle Model AP-101S Principles of Operation with Shuttle
+      Instruction Set
+    number: 85-C67-001
+    authors:
+      - name: IBM Federal Systems Division
+    url: "https://www.ibiblio.org/apollo/Shuttle/Shuttle%20GPC%20Software%20Model%20AP-101S.pdf"
+    notes: The primary source for the instruction set.
+  - type: software
+    title: Virtual AGC
+    authors:
+      - family-names: Burkey
+        given-names: Ronald
+    url: "https://www.ibiblio.org/apollo/"
+    notes: >-
+      Source of the recovered HAL/S-FC compiler, the ASM101S assembler,
+      the flight runtime library, the fixture programs, and the yaGPC2
+      cross-check emulator. This project would not exist without it.
