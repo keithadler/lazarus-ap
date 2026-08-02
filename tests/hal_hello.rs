@@ -224,7 +224,6 @@ fn nasa_flight_log_and_tan() {
 /// Wave 2: five more flight routines, with real dependency chains
 /// (SINH calls the flight EXP; ASINH calls flight SQRT and LOG...).
 #[test]
-#[ignore = "wave-2 chains: stub adcon relocates to the module base, not the callee — ESDID mapping in lnk_lite (see roms/nasa/CENSUS.md)"]
 fn nasa_flight_wave2() {
     let to_f = |w: u32| {
         let u = lazarus_ap::float::unpack_short(w);

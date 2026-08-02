@@ -58,6 +58,11 @@ def parse_deck(path):
         typ = ebcdic_to_ascii(card[1:4])
         if typ == "ESD":
             size = be(card[10:12])
+            # Each ESD card declares the ESDID of its FIRST entry
+            # (bytes 14-15) and carries up to three 16-byte entries;
+            # numbering must start there, not from a running counter
+            # (they only agree for single-CSECT decks).
+            first_id = be(card[14:16])
             for k in range(0, min(size, 48), 16):
                 ent = card[16 + k:32 + k]
                 name = ebcdic_to_ascii(ent[0:8]).rstrip()
@@ -68,7 +73,10 @@ def parse_deck(path):
                 # (bytes 9-12, in bytes): ASM101S adcons are chain-
                 # relative, so relocation must subtract this.
                 addr = be(ent[9:12]) if kind == "SD" else 0
-                cur["esds"].append({"name": name, "kind": kind, "addr": addr})
+                cur["esds"].append({
+                    "id": first_id + k // 16,
+                    "name": name, "kind": kind, "addr": addr,
+                })
         elif typ == "TXT":
             cur["txt"].append({
                 "addr": be(card[5:8]),
@@ -129,7 +137,8 @@ def main():
     for m, mod in enumerate(modules):
         # ESDID -> address (1-based, in deck order)
         addr_of = {}
-        for i, esd in enumerate(mod["esds"], start=1):
+        for esd in mod["esds"]:
+            i = esd["id"]
             name = esd["name"]
             if esd["kind"] == "SD":
                 r = role_of(name)
@@ -187,7 +196,8 @@ def standalone(argv):
     for mod in modules:
         addr_of = {}
         span = 0
-        for i, esd in enumerate(mod["esds"], start=1):
+        for esd in mod["esds"]:
+            i = esd["id"]
             if esd["kind"] != "SD":
                 continue
             off_hw = esd["addr"] // 2
@@ -200,23 +210,49 @@ def standalone(argv):
         placement.append(addr_of)
         addr += (span + 1) & ~1
         top = max(top, addr)
-    # resolve ERs against SD names across modules
+    # Synthesize the #Q call stubs the linker is expected to provide
+    # (hello.fcm carries #QCOUT/#QHOUT/#QIOINIT as standalone
+    # 2-halfword sections): a Figure 2-17 pointer, Y(entry) followed by
+    # the control halfword 0x0E00.
     names = {}
     for mod, addr_of in zip(modules, placement):
-        for i, esd in enumerate(mod["esds"], start=1):
+        for esd in mod["esds"]:
             if esd["kind"] == "SD":
-                names[esd["name"]] = addr_of[i]
-    image = bytearray(top * 2)
+                names[esd["name"]] = addr_of[esd["id"]]
+    stubs = {}
+    for mod in modules:
+        for esd in mod["esds"]:
+            n = esd["name"]
+            if esd["kind"] == "ER" and n.startswith("#Q") and n not in names:
+                target = names.get(n[2:])
+                if target is not None and n not in stubs:
+                    stubs[n] = top
+                    names[n] = top
+                    top += 2
+    synth = bytearray()
+    for n, at in stubs.items():
+        synth += sector16(names[n[2:]]).to_bytes(2, "big")
+        synth += (0x0E00).to_bytes(2, "big")
+
+    # resolve ERs against SD names across modules
     for mod, addr_of in zip(modules, placement):
-        for i, esd in enumerate(mod["esds"], start=1):
+        for esd in mod["esds"]:
+            if esd["kind"] == "SD":
+                names[esd["name"]] = addr_of[esd["id"]]
+    image = bytearray(top * 2)
+    for n, at in stubs.items():
+        off = (at - min(stubs.values())) * 2
+        image[at * 2:at * 2 + 4] = synth[off:off + 4]
+    for mod, addr_of in zip(modules, placement):
+        for esd in mod["esds"]:
             if esd["kind"] == "ER":
                 if esd["name"] not in names:
                     sys.exit(f"unresolved external {esd['name']}")
-                addr_of[i] = names[esd["name"]]
+                addr_of[esd["id"]] = names[esd["name"]]
         for t in mod["txt"]:
             b = addr_of[t["esdid"]] * 2
             image[b + t["addr"]:b + t["addr"] + t["size"]] = t["data"]
-        chain = {i: e["addr"] // 2 for i, e in enumerate(mod["esds"], start=1)}
+        chain = {e["id"]: e["addr"] // 2 for e in mod["esds"]}
         for r in mod["rld"]:
             # Adcon contents are chain-relative (they already include the
             # target CSECT's offset within its module), so the fixup is

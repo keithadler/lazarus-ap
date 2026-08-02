@@ -80,7 +80,30 @@ through a hand-built Figure 2-17 stub (Y(entry) + X'0E00'), returning
 via SRET. Driver template: EXP_DRV.asm; swap EXTRN/entry/argument.
 195 more routines await the same treatment.
 
-## Wave 2 (SINH/TANH/ACOS/ASINH/ATANH) — linked, one linker bug away
+## ✓ Wave 2 RESURRECTED (SINH/TANH/ACOS/ASINH/ATANH)
+
+| Routine | Chain | Input | Flight answer | Modern | Status |
+|---|---|---|---|---|---|
+| SINH | →EXP | 1.0 | 1.1752014 | 1.1752012 | ✓ |
+| TANH | →EXP | 1.0 | 0.7615942 | 0.7615942 | ✓ |
+| ACOS | →SQRT | 0.5 | 1.0471973 | 1.0471976 | ✓ |
+| ASINH | →SQRT,LOG | 1.0 | 0.8813735 | 0.8813736 | ✓ |
+| ATANH | →LOG | 0.5 | 0.5493059 | 0.5493061 | ✓ |
+
+Each calls the genuine flight routines beneath it — SINH's answer is
+computed by the Shuttle's own EXP; ASINH's by its SQRT and LOG.
+
+Two linker discoveries closed this out:
+1. ESD cards declare the ESDID of their FIRST entry (bytes 14-15) and
+   hold up to three; numbering must start there, not from a running
+   counter (they agree only for single-CSECT decks).
+2. **lnk101 SYNTHESIZES the #Q call stubs.** hello.fcm carries
+   #QCOUT/#QHOUT/#QIOINIT as standalone 2-halfword sections precisely
+   because the linker manufactures one - Y(entry) + control halfword
+   0x0E00 - for every unresolved #Q external. lnk_lite now does the
+   same, so a driver need only EXTRN #QNAME and ACALL through it.
+
+### (historical) the bug that led there
 
 Dependency-closed drivers now build automatically: the tool reads each
 census deck's #Q externals, walks the closure (SINH->EXP,
